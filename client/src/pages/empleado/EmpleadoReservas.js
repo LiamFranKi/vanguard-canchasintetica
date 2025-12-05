@@ -1,0 +1,1145 @@
+import React, { useEffect, useState, useRef } from 'react';
+import api from '../../services/api';
+import moment from 'moment';
+import swalConfig from '../../utils/swalConfig';
+import FormCard from '../../components/ui/FormCard';
+import FormInput from '../../components/ui/FormInput';
+import FormSelect from '../../components/ui/FormSelect';
+import FormTextarea from '../../components/ui/FormTextarea';
+import Button from '../../components/ui/Button';
+import Card from '../../components/ui/Card';
+import { useAuth } from '../../context/AuthContext';
+import { useConfig } from '../../context/ConfigContext';
+
+const EmpleadoReservas = () => {
+  const { user } = useAuth();
+  const { getConfig } = useConfig();
+  const [reservas, setReservas] = useState([]);
+  const [canchas, setCanchas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [filtroCancha, setFiltroCancha] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState('activas'); // 'activas' o 'pasadas'
+  const [paginaActual, setPaginaActual] = useState(1);
+  const itemsPorPagina = 20;
+  const [editandoReserva, setEditandoReserva] = useState(null);
+  const [formDataEdicion, setFormDataEdicion] = useState({
+    hora_inicio: '',
+    hora_fin: '',
+    notas: ''
+  });
+  const [mostrarModalPago, setMostrarModalPago] = useState(false);
+  const [reservaParaPago, setReservaParaPago] = useState(null);
+  const [formData, setFormData] = useState({
+    cancha_id: '',
+    usuario_busqueda: '',
+    usuario_id: null,
+    fecha: '',
+    hora_inicio: '',
+    hora_fin: '',
+    notas: ''
+  });
+  const [formPago, setFormPago] = useState({
+    metodo_pago: 'efectivo',
+    comprobante: null
+  });
+  const [usuarios, setUsuarios] = useState([]);
+  const [mostrarCamara, setMostrarCamara] = useState(false);
+  const [mostrarRecibo, setMostrarRecibo] = useState(false);
+  const [reciboUrl, setReciboUrl] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    // Si ya hay un usuario seleccionado y el texto tiene el formato "DNI - Nombre", no buscar de nuevo
+    if (formData.usuario_id && formData.usuario_busqueda.includes(' - ')) {
+      return; // Ya hay un usuario seleccionado, no buscar de nuevo
+    }
+    
+    if (formData.usuario_busqueda && formData.usuario_busqueda.length >= 2) {
+      buscarUsuario();
+    } else {
+      setUsuarios([]);
+      if (!formData.usuario_id) {
+        setFormData(prev => ({ ...prev, usuario_id: null }));
+      }
+    }
+  }, [formData.usuario_busqueda]);
+
+  // Limpiar cámara al desmontar
+  useEffect(() => {
+    return () => {
+      detenerCamara();
+    };
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [canchasRes] = await Promise.all([
+        api.get('/canchas?activa=true')
+      ]);
+      setCanchas(canchasRes.data);
+      loadReservas();
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!loading) {
+      loadReservas();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroCancha, filtroEstado, filtroTipo]);
+
+  const loadReservas = async () => {
+    try {
+      setLoading(true);
+      const params = {};
+      
+      if (filtroCancha && filtroCancha !== '') {
+        const canchaId = parseInt(filtroCancha);
+        if (!isNaN(canchaId)) {
+          params.cancha_id = canchaId;
+        }
+      }
+      
+      if (filtroEstado && filtroEstado !== '' && filtroEstado !== null && filtroEstado !== undefined) {
+        const estadoStr = String(filtroEstado).trim();
+        if (estadoStr !== '') {
+          if (estadoStr === 'pagada') {
+            params.estado = 'confirmada';
+          } else {
+            params.estado = estadoStr;
+          }
+        }
+      }
+      
+      const response = await api.get('/reservas', { params });
+      let reservasFiltradas = Array.isArray(response.data) ? response.data : [];
+      
+      if (filtroEstado && String(filtroEstado).trim() === 'pagada') {
+        reservasFiltradas = reservasFiltradas.filter(r => 
+          r.estado === 'completada' && r.pago_id && r.pago_estado === 'confirmado'
+        );
+      }
+      
+      // Aplicar filtro de tipo (activas/pasadas) basado en la fecha
+      const hoy = moment().startOf('day');
+      const reservasConTipo = reservasFiltradas.map(r => {
+        const fechaReserva = moment(r.fecha).startOf('day');
+        const esPasada = fechaReserva.isBefore(hoy);
+        return { ...r, esPasada };
+      });
+
+      if (filtroTipo === 'pasadas') {
+        // Pasadas: todas las reservas anteriores a hoy (incluyendo canceladas)
+        setReservas(reservasConTipo.filter(r => r.esPasada));
+      } else {
+        // Activas: todas las reservas de hoy o futuras (incluyendo canceladas)
+        setReservas(reservasConTipo.filter(r => !r.esPasada));
+      }
+      
+      setPaginaActual(1); // Reset a primera página al cambiar filtros
+    } catch (error) {
+      console.error('Error cargando reservas:', error);
+      swalConfig.toastError('Error', 'No se pudieron cargar las reservas');
+      setReservas([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const buscarUsuario = async () => {
+    if (formData.usuario_busqueda.length < 2) {
+      setUsuarios([]);
+      setFormData(prev => ({ ...prev, usuario_id: null }));
+      return;
+    }
+    
+    // Si el texto tiene formato "DNI - Nombre", extraer solo el DNI para buscar
+    let textoBusqueda = formData.usuario_busqueda.trim();
+    if (textoBusqueda.includes(' - ')) {
+      textoBusqueda = textoBusqueda.split(' - ')[0].trim();
+    }
+    
+    if (textoBusqueda.length < 2) {
+      setUsuarios([]);
+      return;
+    }
+    
+    try {
+      const response = await api.get(`/users?search=${encodeURIComponent(textoBusqueda)}`);
+      const usuariosEncontrados = response.data || [];
+      setUsuarios(usuariosEncontrados);
+      
+      // Si hay exactamente un resultado y coincide con el texto buscado, seleccionarlo automáticamente
+      if (usuariosEncontrados.length === 1) {
+        const usuario = usuariosEncontrados[0];
+        const busqueda = textoBusqueda.toLowerCase().trim();
+        const dniMatch = usuario.dni.toLowerCase() === busqueda;
+        const nombreCompleto = `${usuario.nombre} ${usuario.apellido}`.toLowerCase();
+        const nombreMatch = nombreCompleto.includes(busqueda) || busqueda.includes(usuario.dni.toLowerCase());
+        
+        if (dniMatch || nombreMatch) {
+          setFormData(prev => ({
+            ...prev,
+            usuario_id: usuario.id,
+            usuario_busqueda: `${usuario.dni} - ${usuario.nombre} ${usuario.apellido}`
+          }));
+        } else {
+          setFormData(prev => ({ ...prev, usuario_id: null }));
+        }
+      } else if (usuariosEncontrados.length > 1) {
+        // Si hay múltiples resultados, limpiar la selección para que el usuario elija
+        setFormData(prev => ({ ...prev, usuario_id: null }));
+      } else {
+        // Si no hay resultados, limpiar la selección
+        setFormData(prev => ({ ...prev, usuario_id: null }));
+      }
+    } catch (error) {
+      console.error('Error buscando usuario:', error);
+      setUsuarios([]);
+      setFormData(prev => ({ ...prev, usuario_id: null }));
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!formData.usuario_id) {
+      if (formData.usuario_busqueda.length === 0) {
+        swalConfig.toastError('Error', 'Debes buscar y seleccionar un usuario');
+      } else if (usuarios.length === 0) {
+        swalConfig.toastError('Error', 'No se encontraron usuarios. Verifica el DNI, nombre o apellido e intenta nuevamente');
+      } else {
+        swalConfig.toastError('Error', 'Por favor, selecciona un usuario de la lista de resultados');
+      }
+      return;
+    }
+
+    try {
+      // Crear reserva con el usuario seleccionado
+      const reservaData = {
+        cancha_id: formData.cancha_id,
+        usuario_id: formData.usuario_id,
+        fecha: formData.fecha,
+        hora_inicio: formData.hora_inicio,
+        hora_fin: formData.hora_fin,
+        notas: formData.notas
+      };
+
+      await api.post('/reservas', reservaData);
+      
+      swalConfig.toastSuccess('¡Reserva Creada!', 'La reserva se ha creado exitosamente');
+      
+      setMostrarFormulario(false);
+      setFormData({
+        cancha_id: '',
+        usuario_busqueda: '',
+        usuario_id: null,
+        fecha: '',
+        hora_inicio: '',
+        hora_fin: '',
+        notas: ''
+      });
+      setUsuarios([]);
+      loadData();
+    } catch (error) {
+      swalConfig.toastError('Error', error.response?.data?.message || 'Error al crear la reserva');
+    }
+  };
+
+  const handleCancelar = async (id) => {
+    const result = await swalConfig.confirm(
+      '¿Cancelar reserva?',
+      'Esta acción no se puede deshacer. ¿Estás seguro?',
+      {
+        confirmText: 'Sí, cancelar',
+        confirmColor: '#ef4444',
+        cancelText: 'No, mantener'
+      }
+    );
+
+    if (result.isConfirmed) {
+      try {
+        await api.put(`/reservas/${id}/cancelar`);
+        swalConfig.toastSuccess('Reserva Cancelada', 'La reserva se ha cancelado correctamente');
+        loadData();
+      } catch (error) {
+        swalConfig.toastError('Error', 'Error al cancelar la reserva');
+      }
+    }
+  };
+
+  const handleCrearPago = (reserva) => {
+    setReservaParaPago(reserva);
+    setFormPago({
+      metodo_pago: 'efectivo',
+      comprobante: null
+    });
+    setMostrarModalPago(true);
+  };
+
+  const handleFileChangePago = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setFormPago({ ...formPago, comprobante: e.target.files[0] });
+    }
+  };
+
+  const iniciarCamara = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' }
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        setMostrarCamara(true);
+      }
+    } catch (error) {
+      console.error('Error accediendo a la cámara:', error);
+      swalConfig.toastError('Error', 'No se pudo acceder a la cámara. Por favor, permite el acceso a la cámara.');
+    }
+  };
+
+  const capturarFoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0);
+      
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const file = new File([blob], `comprobante-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          setFormPago({ ...formPago, comprobante: file });
+          detenerCamara();
+        }
+      }, 'image/jpeg', 0.9);
+    }
+  };
+
+  const detenerCamara = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject;
+      const tracks = stream.getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setMostrarCamara(false);
+  };
+
+  const handleSubmitPago = async (e) => {
+    e.preventDefault();
+    
+    if (!reservaParaPago) return;
+
+    // Validar que Yape y Transferencia tengan comprobante
+    if ((formPago.metodo_pago === 'yape' || formPago.metodo_pago === 'transferencia') && !formPago.comprobante) {
+      swalConfig.toastError('Error', 'Debes adjuntar el comprobante de pago');
+      return;
+    }
+
+    const formDataToSend = new FormData();
+    formDataToSend.append('metodo_pago', formPago.metodo_pago);
+    if (formPago.comprobante) {
+      formDataToSend.append('comprobante', formPago.comprobante);
+    }
+
+    try {
+      await api.post(`/reservas/${reservaParaPago.id}/pago`, formDataToSend, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      swalConfig.toastSuccess('¡Pago Registrado!', 'El pago se ha registrado correctamente');
+      
+      setMostrarModalPago(false);
+      setReservaParaPago(null);
+      setFormPago({
+        metodo_pago: 'efectivo',
+        comprobante: null
+      });
+      detenerCamara();
+      loadData();
+    } catch (error) {
+      swalConfig.toastError('Error', error.response?.data?.message || 'Error al crear el pago');
+    }
+  };
+
+  const handleConfirmarPago = async (reservaId) => {
+    const result = await swalConfig.confirm(
+      '¿Confirmar pago?',
+      'Esta acción confirmará el pago y la reserva asociada',
+      {
+        confirmText: 'Sí, confirmar',
+        confirmColor: '#22c55e',
+        cancelText: 'Cancelar'
+      }
+    );
+
+    if (result.isConfirmed) {
+      try {
+        await api.put(`/reservas/${reservaId}/pago/confirmar`);
+        swalConfig.toastSuccess('Pago Confirmado', 'El pago se ha confirmado correctamente');
+        loadData();
+      } catch (error) {
+        swalConfig.toastError('Error', error.response?.data?.message || 'Error al confirmar el pago');
+      }
+    }
+  };
+
+  const verRecibo = (comprobante) => {
+    if (comprobante) {
+      const url = `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${comprobante}`;
+      setReciboUrl(url);
+      setMostrarRecibo(true);
+    }
+  };
+
+  const calcularDiasRestantes = (fechaCreacion) => {
+    const diasMax = parseInt(getConfig('dias_max_pago') || 3);
+    const fechaLimite = moment(fechaCreacion).add(diasMax, 'days');
+    const diasRestantes = fechaLimite.diff(moment(), 'days');
+    return diasRestantes;
+  };
+
+  const handleEditar = (reserva) => {
+    setEditandoReserva(reserva.id);
+    setFormDataEdicion({
+      hora_inicio: reserva.hora_inicio.substring(0, 5),
+      hora_fin: reserva.hora_fin.substring(0, 5),
+      notas: reserva.notas || ''
+    });
+  };
+
+  const calcularDuracion = () => {
+    if (!formDataEdicion.hora_inicio || !formDataEdicion.hora_fin) return 0;
+    const inicio = moment(formDataEdicion.hora_inicio, 'HH:mm');
+    const fin = moment(formDataEdicion.hora_fin, 'HH:mm');
+    return fin.diff(inicio, 'minutes');
+  };
+
+  const calcularNuevoCosto = (reserva) => {
+    const duracionMinutos = calcularDuracion();
+    if (duracionMinutos <= 0) {
+      const costoActual = parseFloat(reserva.costo_total) || 0;
+      return costoActual;
+    }
+
+    const precio30min = parseFloat(reserva.precio_30min) || 25;
+    const precio1hora = parseFloat(reserva.precio_1hora) || 50;
+
+    let nuevoCosto = 0;
+    if (duracionMinutos <= 30) {
+      nuevoCosto = precio30min;
+    } else if (duracionMinutos <= 60) {
+      nuevoCosto = precio1hora;
+    } else if (duracionMinutos <= 90) {
+      nuevoCosto = precio1hora + precio30min;
+    } else if (duracionMinutos <= 120) {
+      nuevoCosto = precio1hora * 2;
+    } else {
+      const horas = duracionMinutos / 60;
+      nuevoCosto = precio1hora * horas;
+    }
+    
+    const costoFinal = parseFloat(nuevoCosto) || 0;
+    return isNaN(costoFinal) ? 0 : costoFinal;
+  };
+
+  const handleGuardarEdicion = async (e) => {
+    e.preventDefault();
+    
+    if (!editandoReserva) return;
+
+    const reserva = reservas.find(r => r.id === editandoReserva);
+    if (!reserva) return;
+
+    try {
+      await api.put(`/reservas/${editandoReserva}`, {
+        hora_inicio: formDataEdicion.hora_inicio,
+        hora_fin: formDataEdicion.hora_fin,
+        notas: formDataEdicion.notas
+      });
+
+      swalConfig.toastSuccess('Reserva Actualizada', 'La reserva se ha actualizado correctamente. El costo se ha recalculado automáticamente.');
+      
+      setEditandoReserva(null);
+      setFormDataEdicion({ hora_inicio: '', hora_fin: '', notas: '' });
+      loadReservas();
+    } catch (error) {
+      swalConfig.toastError('Error', error.response?.data?.message || 'Error al actualizar la reserva');
+    }
+  };
+
+  const handleCancelarEdicion = () => {
+    setEditandoReserva(null);
+    setFormDataEdicion({ hora_inicio: '', hora_fin: '', notas: '' });
+  };
+
+  const cambiarEstado = async (id, nuevoEstado) => {
+    const result = await swalConfig.confirm(
+      `¿Cambiar estado a "${nuevoEstado}"?`,
+      `Estás a punto de cambiar el estado de la reserva.`,
+      {
+        confirmText: 'Sí, cambiar',
+        confirmColor: nuevoEstado === 'confirmada' ? '#22c55e' : nuevoEstado === 'completada' ? '#3b82f6' : '#ef4444',
+        cancelText: 'Cancelar',
+      }
+    );
+
+    if (result.isConfirmed) {
+      try {
+        await api.put(`/reservas/${id}/estado`, { estado: nuevoEstado });
+        swalConfig.toastSuccess('Estado Actualizado', `La reserva ha sido ${nuevoEstado} correctamente`);
+        loadData();
+      } catch (error) {
+        swalConfig.toastError('Error', error.response?.data?.message || 'Error al actualizar el estado');
+      }
+    }
+  };
+
+  const getEstadoColor = (estado) => {
+    const colores = {
+      pendiente: 'bg-yellow-100 text-yellow-800',
+      confirmada: 'bg-green-100 text-green-800',
+      cancelada: 'bg-red-100 text-red-800',
+      completada: 'bg-blue-100 text-blue-800'
+    };
+    return colores[estado] || 'bg-gray-100 text-gray-800';
+  };
+
+  // Paginación
+  const totalPaginas = Math.ceil(reservas.length / itemsPorPagina);
+  const inicioIndex = (paginaActual - 1) * itemsPorPagina;
+  const finIndex = inicioIndex + itemsPorPagina;
+  const reservasPaginadas = reservas.slice(inicioIndex, finIndex);
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800 mb-1">Gestión de Reservas</h1>
+          <p className="text-gray-600">Crea y administra reservas para los usuarios</p>
+        </div>
+        <Button
+          variant={mostrarFormulario ? 'secondary' : 'primary'}
+          onClick={() => setMostrarFormulario(!mostrarFormulario)}
+          icon={mostrarFormulario ? '✕' : '➕'}
+        >
+          {mostrarFormulario ? 'Cancelar' : 'Nueva Reserva'}
+        </Button>
+      </div>
+
+      {/* Filtros */}
+      <div className="mb-6">
+        <div className="flex gap-4 flex-wrap mb-4">
+          <FormSelect
+            value={filtroCancha}
+            onChange={(e) => setFiltroCancha(e.target.value)}
+            options={[
+              { value: '', label: 'Todas las canchas' },
+              ...canchas.map(cancha => ({
+                value: cancha.id.toString(),
+                label: cancha.nombre
+              }))
+            ]}
+            className="w-64 mb-0"
+          />
+          <FormSelect
+            value={filtroEstado || ''}
+            onChange={(e) => setFiltroEstado(e.target.value)}
+            placeholder="Seleccionar estado..."
+            options={[
+              { value: 'pendiente', label: 'Pendiente' },
+              { value: 'pagada', label: 'Pagada' },
+              { value: 'cancelada', label: 'Cancelada' }
+            ]}
+            className="w-64 mb-0"
+          />
+        </div>
+        {/* Filtro de tipo de reservas */}
+        <div className="flex gap-4">
+          <Button
+            variant={filtroTipo === 'activas' ? 'primary' : 'secondary'}
+            onClick={() => setFiltroTipo('activas')}
+            icon="📋"
+          >
+            Reservas Activas
+          </Button>
+          <Button
+            variant={filtroTipo === 'pasadas' ? 'primary' : 'secondary'}
+            onClick={() => setFiltroTipo('pasadas')}
+            icon="📜"
+          >
+            Reservas Pasadas
+          </Button>
+        </div>
+      </div>
+
+      {/* Formulario de Edición */}
+      {editandoReserva && (() => {
+        const reserva = reservas.find(r => r.id === editandoReserva);
+        if (!reserva) return null;
+        const nuevoCosto = calcularNuevoCosto(reserva);
+        const duracionMinutos = calcularDuracion();
+        const nuevoCostoNum = typeof nuevoCosto === 'number' ? nuevoCosto : parseFloat(nuevoCosto) || 0;
+        
+        return (
+          <FormCard
+            title="Editar Reserva"
+            subtitle={`Cancha: ${reserva.cancha_nombre} - ${moment(reserva.fecha).format('DD/MM/YYYY')}`}
+            onSubmit={handleGuardarEdicion}
+            onCancel={handleCancelarEdicion}
+            submitLabel={`Guardar Cambios (Nuevo costo: S/.${nuevoCostoNum.toFixed(2)})`}
+            cancelLabel="Cancelar"
+            className="mb-6"
+          >
+            <div className="grid md:grid-cols-2 gap-6">
+              <FormInput
+                label="Hora Inicio"
+                type="time"
+                value={formDataEdicion.hora_inicio}
+                onChange={(e) => setFormDataEdicion({ ...formDataEdicion, hora_inicio: e.target.value })}
+                required
+                icon="🕐"
+              />
+                <FormInput
+                  label="Hora Fin"
+                  type="time"
+                  value={formDataEdicion.hora_fin}
+                  onChange={(e) => setFormDataEdicion({ ...formDataEdicion, hora_fin: e.target.value })}
+                  required
+                  icon="🕐"
+                />
+            </div>
+
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+              <p className="text-sm text-blue-800">
+                <strong>Duración:</strong> {duracionMinutos} minutos ({Math.floor(duracionMinutos / 60)}h {duracionMinutos % 60}m)
+              </p>
+              <p className="text-lg font-bold text-green-700 mt-2">
+                <strong>Costo Actual:</strong> S/.{parseFloat(reserva.costo_total || 0).toFixed(2)} → <strong>Nuevo Costo:</strong> S/.{nuevoCostoNum.toFixed(2)}
+              </p>
+              {nuevoCostoNum < parseFloat(reserva.costo_total || 0) && (
+                <p className="text-sm text-green-600 mt-1">
+                  ✓ Se reducirá el costo en S/.{(parseFloat(reserva.costo_total || 0) - nuevoCostoNum).toFixed(2)}
+                </p>
+              )}
+            </div>
+
+            <FormTextarea
+              label="Notas (opcional)"
+              value={formDataEdicion.notas}
+              onChange={(e) => setFormDataEdicion({ ...formDataEdicion, notas: e.target.value })}
+              placeholder="Notas sobre la reserva..."
+              rows="3"
+              icon="📝"
+            />
+          </FormCard>
+        );
+      })()}
+
+      {mostrarFormulario && (
+        <FormCard
+          title="Nueva Reserva"
+          subtitle="Completa los datos para crear una reserva para un usuario"
+          onSubmit={handleSubmit}
+          onCancel={() => setMostrarFormulario(false)}
+          submitLabel="Crear Reserva"
+          cancelLabel="Cancelar"
+          className="mb-6"
+        >
+          <div className="grid md:grid-cols-2 gap-6">
+            <FormInput
+              label="Buscar Usuario"
+              type="text"
+                value={formData.usuario_busqueda}
+                onChange={(e) => {
+                  const nuevoValor = e.target.value;
+                  if (!nuevoValor || !nuevoValor.includes(' - ') || nuevoValor !== formData.usuario_busqueda) {
+                    setFormData({ ...formData, usuario_busqueda: nuevoValor, usuario_id: null });
+                  }
+                }}
+              placeholder="Buscar por DNI, nombre o apellido..."
+              required
+              icon="🔍"
+            />
+
+            {usuarios.length > 0 && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm font-semibold text-blue-800 mb-2">
+                  {usuarios.length} usuario{usuarios.length !== 1 ? 's' : ''} encontrado{usuarios.length !== 1 ? 's' : ''}:
+                </p>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {usuarios.map(usuario => (
+                    <button
+                      key={usuario.id}
+                      type="button"
+                      onClick={() => setFormData({ 
+                        ...formData, 
+                        usuario_id: usuario.id,
+                        usuario_busqueda: `${usuario.dni} - ${usuario.nombre} ${usuario.apellido}`
+                      })}
+                      className={`w-full text-left p-3 bg-white rounded-lg hover:bg-blue-100 transition border-2 ${
+                        formData.usuario_id === usuario.id ? 'border-blue-500 bg-blue-50' : 'border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold text-gray-800">
+                            {usuario.nombre} {usuario.apellido}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            DNI: {usuario.dni}
+                          </div>
+                          {usuario.email && (
+                            <div className="text-xs text-gray-500">
+                              {usuario.email}
+                            </div>
+                          )}
+                        </div>
+                        {formData.usuario_id === usuario.id && (
+                          <span className="text-green-600 text-xl">✓</span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {formData.usuario_busqueda.length >= 2 && usuarios.length === 0 && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800 font-semibold">
+                  ⚠️ No se encontraron usuarios
+                </p>
+                <p className="text-xs text-yellow-700 mt-1">
+                  Intenta buscar por DNI, nombre o apellido. Asegúrate de escribir correctamente.
+                </p>
+              </div>
+            )}
+
+            {formData.usuario_id && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800 font-semibold flex items-center">
+                  <span className="mr-2">✓</span>
+                  Usuario seleccionado correctamente
+                </p>
+              </div>
+            )}
+
+            <FormSelect
+              label="Cancha"
+              value={formData.cancha_id}
+              onChange={(e) => setFormData({ ...formData, cancha_id: e.target.value })}
+              options={canchas.map(c => ({ value: c.id, label: c.nombre }))}
+              placeholder="Seleccionar cancha"
+              required
+              icon="⚽"
+            />
+
+            <FormInput
+              label="Fecha"
+              type="date"
+              value={formData.fecha}
+              onChange={(e) => setFormData({ ...formData, fecha: e.target.value })}
+              min={moment().format('YYYY-MM-DD')}
+              required
+              icon="📅"
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormInput
+                label="Hora Inicio"
+                type="time"
+                value={formData.hora_inicio}
+                onChange={(e) => setFormData({ ...formData, hora_inicio: e.target.value })}
+                required
+                icon="🕐"
+              />
+
+              <FormInput
+                label="Hora Fin"
+                type="time"
+                value={formData.hora_fin}
+                onChange={(e) => setFormData({ ...formData, hora_fin: e.target.value })}
+                required
+                icon="🕐"
+              />
+            </div>
+          </div>
+
+          <FormTextarea
+            label="Notas (opcional)"
+            value={formData.notas}
+            onChange={(e) => setFormData({ ...formData, notas: e.target.value })}
+            placeholder="Agrega alguna nota sobre la reserva..."
+            rows="3"
+            icon="📝"
+          />
+        </FormCard>
+      )}
+
+      {loading ? (
+        <div className="text-center py-12">Cargando...</div>
+      ) : (
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr className="bg-gradient-to-r from-green-600 to-green-700 text-white">
+                  <th className="px-6 py-4 text-center font-semibold">Usuario</th>
+                  <th className="px-6 py-4 text-center font-semibold">Fecha y Horario</th>
+                  <th className="px-6 py-4 text-center font-semibold">Costo</th>
+                  <th className="px-6 py-4 text-center font-semibold">Pago</th>
+                  <th className="px-6 py-4 text-center font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reservasPaginadas.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                      No se encontraron reservas
+                    </td>
+                  </tr>
+                ) : (
+                  reservasPaginadas.map((reserva) => (
+                    <tr key={reserva.id} className="border-b hover:bg-gray-50 transition">
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex flex-col">
+                          <span className="font-semibold">{reserva.usuario_nombre}</span>
+                          <span className="text-xs text-gray-500 mt-1">{reserva.cancha_nombre}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex flex-col">
+                          <span className="font-semibold">{moment(reserva.fecha).format('DD/MM/YYYY')}</span>
+                          <span className="text-xs text-gray-500 mt-1">{reserva.hora_inicio.substring(0, 5)} - {reserva.hora_fin.substring(0, 5)}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 font-semibold text-green-600 text-center">S/.{parseFloat(reserva.costo_total).toFixed(2)}</td>
+                      <td className="px-6 py-4 text-center">
+                        {reserva.estado === 'cancelada' ? (
+                          <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">
+                            Cancelado
+                          </span>
+                        ) : reserva.pago_id ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-1">
+                              <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                                Pagado
+                              </span>
+                              {reserva.comprobante && (
+                                <button
+                                  onClick={() => verRecibo(reserva.comprobante)}
+                                  className="text-green-600 hover:text-green-800 transition"
+                                  title="Ver recibo"
+                                >
+                                  📄
+                                </button>
+                              )}
+                            </div>
+                            <span className="text-xs text-gray-600 capitalize">{reserva.metodo_pago}</span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold">
+                              ⏳ Sin pago
+                            </span>
+                            {calcularDiasRestantes(reserva.created_at) >= 0 ? (
+                              <span className="text-xs text-gray-600">
+                                {calcularDiasRestantes(reserva.created_at)} días restantes
+                              </span>
+                            ) : (
+                              <span className="text-xs text-red-600 font-bold">
+                                ⚠️ Vencida
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2 justify-center flex-wrap">
+                          {/* Para empleados: NO mostrar botones si la reserva está pagada Y es pasada */}
+                          {!(user?.rol === 'empleado' && reserva.pago_id && reserva.esPasada) && (
+                            <>
+                              {/* Botón Editar - solo para pendientes y NO pasadas para empleados */}
+                              {(
+                                reserva.estado === 'pendiente' && !reserva.esPasada
+                              ) && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => handleEditar(reserva)}
+                                  icon="✏️"
+                                >
+                                  Editar
+                                </Button>
+                              )}
+                              {/* Pendiente sin pago: Pagar y Cancelar */}
+                              {reserva.estado === 'pendiente' && !reserva.pago_id && (
+                                <>
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => handleCrearPago(reserva)}
+                                    icon="💳"
+                                  >
+                                    Pagar
+                                  </Button>
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => handleCancelar(reserva.id)}
+                                    icon="✕"
+                                  >
+                                    Cancelar
+                                  </Button>
+                                </>
+                              )}
+                              {/* Pendiente con pago pendiente: Confirmar pago */}
+                              {reserva.estado === 'pendiente' && reserva.pago_estado === 'pendiente' && (
+                                <Button
+                                  variant="success"
+                                  size="sm"
+                                  onClick={() => handleConfirmarPago(reserva.id)}
+                                  icon="✓"
+                                >
+                                  Confirmar Pago
+                                </Button>
+                              )}
+                              {/* Completada/Pagada: Para empleados NO mostrar botones si es pasada, para admin solo Cancelar */}
+                              {reserva.estado === 'completada' && reserva.pago_id && user?.rol === 'admin' && (
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  onClick={() => handleCancelar(reserva.id)}
+                                  icon="✕"
+                                >
+                                  Cancelar
+                                </Button>
+                              )}
+                              {/* Completada/Pagada pero NO pasada: Para empleados puede cancelar */}
+                              {reserva.estado === 'completada' && reserva.pago_id && user?.rol === 'empleado' && !reserva.esPasada && (
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  onClick={() => handleCancelar(reserva.id)}
+                                  icon="✕"
+                                >
+                                  Cancelar
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          {/* Paginación */}
+          {totalPaginas > 1 && (
+            <div className="flex items-center justify-between px-6 py-4 border-t">
+              <div className="text-sm text-gray-600">
+                Mostrando {inicioIndex + 1} a {Math.min(finIndex, reservas.length)} de {reservas.length} reservas
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
+                  disabled={paginaActual === 1}
+                  icon="←"
+                >
+                  Anterior
+                </Button>
+                <span className="px-4 py-2 text-sm font-semibold text-gray-700">
+                  Página {paginaActual} de {totalPaginas}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))}
+                  disabled={paginaActual === totalPaginas}
+                  icon="→"
+                >
+                  Siguiente
+                </Button>
+              </div>
+        </div>
+          )}
+        </Card>
+      )}
+
+      {/* Modal de Pago */}
+      {mostrarModalPago && reservaParaPago && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <FormCard
+              title="Pagar Reserva"
+              subtitle={`Reserva: ${reservaParaPago.cancha_nombre} - ${moment(reservaParaPago.fecha).format('DD/MM/YYYY')} - S/.${reservaParaPago.costo_total}`}
+              onSubmit={handleSubmitPago}
+              onCancel={() => {
+                detenerCamara();
+                setMostrarModalPago(false);
+                setReservaParaPago(null);
+                setFormPago({
+                  metodo_pago: 'efectivo',
+                  comprobante: null
+                });
+              }}
+              submitLabel="Pagar"
+              cancelLabel="Cancelar"
+            >
+              <FormSelect
+                label="Método de Pago"
+                value={formPago.metodo_pago}
+                onChange={(e) => {
+                  setFormPago({ ...formPago, metodo_pago: e.target.value, comprobante: null });
+                  detenerCamara();
+                }}
+                options={[
+                  { value: 'efectivo', label: 'Efectivo' },
+                  { value: 'yape', label: 'Yape' },
+                  { value: 'transferencia', label: 'Transferencia' }
+                ]}
+                required
+                icon="💳"
+              />
+
+              {(formPago.metodo_pago === 'yape' || formPago.metodo_pago === 'transferencia') && (
+                <div className="mb-6">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    <span className="mr-2">📄</span>Comprobante de Pago
+                    <span className="text-red-500 ml-1">*</span>
+                  </label>
+                  
+                  {!mostrarCamara ? (
+                    <div className="space-y-3">
+                      <div className="flex gap-3">
+                        <label className="flex-1 cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={handleFileChangePago}
+                            className="hidden"
+                            id="file-input"
+                          />
+                          <div className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl hover:border-green-500 focus-within:border-green-500 focus-within:ring-4 focus-within:ring-green-100 transition-all text-center">
+                            <span className="text-gray-600">📁 Seleccionar archivo</span>
+                      </div>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={iniciarCamara}
+                          className="px-4 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 transition-all font-semibold"
+                        >
+                          📷 Cámara
+                        </button>
+                      </div>
+                      {formPago.comprobante && (
+                        <p className="text-sm text-green-600 flex items-center">
+                          <span className="mr-1">✅</span>
+                          {formPago.comprobante.name}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="relative bg-black rounded-xl overflow-hidden">
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          className="w-full h-auto max-h-64"
+                        />
+                        <canvas ref={canvasRef} className="hidden" />
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={capturarFoto}
+                          className="flex-1 px-4 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 transition-all font-semibold"
+                        >
+                          📸 Capturar Foto
+                        </button>
+                        <button
+                          type="button"
+                          onClick={detenerCamara}
+                          className="px-4 py-3 bg-gray-500 text-white rounded-xl hover:bg-gray-600 transition-all font-semibold"
+                        >
+                          ✕ Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <strong>💡 Nota:</strong> El pago se confirmará automáticamente y la reserva pasará a estado "Confirmada".
+                </p>
+              </div>
+            </FormCard>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para ver recibo */}
+      {mostrarRecibo && reciboUrl && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">Comprobante de Pago</h2>
+                <button
+                  onClick={() => {
+                    setMostrarRecibo(false);
+                    setReciboUrl(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+                  </div>
+              <div className="flex justify-center">
+                {reciboUrl.toLowerCase().endsWith('.pdf') ? (
+                  <iframe
+                    src={reciboUrl}
+                    className="w-full h-[70vh] border rounded-lg"
+                    title="Comprobante PDF"
+                  />
+                ) : (
+                  <img
+                    src={reciboUrl}
+                    alt="Comprobante de pago"
+                    className="max-w-full h-auto rounded-lg"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default EmpleadoReservas;
