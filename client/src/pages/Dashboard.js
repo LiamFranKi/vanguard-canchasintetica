@@ -28,11 +28,10 @@ const Dashboard = () => {
     try {
       const response = await api.get('/canchas?activa=true');
       setCanchas(response.data);
-      if (response.data.length > 0) {
-        setCanchaSeleccionada(response.data[0].id);
-      }
+      // NO seleccionar automáticamente - el usuario debe elegir
     } catch (error) {
       console.error('Error cargando canchas:', error);
+      swalConfig.toastError('Error', 'Error al cargar las canchas disponibles');
     }
   };
 
@@ -124,39 +123,47 @@ const Dashboard = () => {
             <FormSelect
               label="Seleccionar Cancha"
               value={canchaSeleccionada || ''}
-              onChange={(e) => setCanchaSeleccionada(parseInt(e.target.value))}
+              onChange={(e) => {
+                const nuevaCancha = parseInt(e.target.value);
+                setCanchaSeleccionada(nuevaCancha);
+                // Limpiar horarios anteriores cuando cambia la cancha
+                setHorariosSemana(null);
+              }}
               options={canchas.map(c => ({ value: c.id, label: c.nombre }))}
-              placeholder="Selecciona una cancha"
+              placeholder="Selecciona una cancha para ver horarios"
               icon="⚽"
               className="w-full"
+              required
             />
           </div>
 
-          {/* Navegación de Semana */}
-          <div className="flex items-center justify-between w-full lg:w-auto gap-4">
-            <Button
-              variant="secondary"
-              onClick={() => cambiarSemana(-1)}
-              icon="←"
-              size="sm"
-            >
-              Semana Anterior
-            </Button>
-            <div className="text-center">
-              <h2 className="text-lg lg:text-xl font-bold text-gray-800">
-                {semanaActual.format('DD/MM/YYYY')} - {semanaActual.clone().add(6, 'days').format('DD/MM/YYYY')}
-              </h2>
-              <p className="text-xs text-gray-600">Semana actual</p>
+          {/* Navegación de Semana - Solo mostrar si hay cancha seleccionada */}
+          {canchaSeleccionada && (
+            <div className="flex items-center justify-between w-full lg:w-auto gap-4">
+              <Button
+                variant="secondary"
+                onClick={() => cambiarSemana(-1)}
+                icon="←"
+                size="sm"
+              >
+                Semana Anterior
+              </Button>
+              <div className="text-center">
+                <h2 className="text-lg lg:text-xl font-bold text-gray-800">
+                  {semanaActual.format('DD/MM/YYYY')} - {semanaActual.clone().add(6, 'days').format('DD/MM/YYYY')}
+                </h2>
+                <p className="text-xs text-gray-600">Semana actual</p>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => cambiarSemana(1)}
+                icon="→"
+                size="sm"
+              >
+                Semana Siguiente
+              </Button>
             </div>
-            <Button
-              variant="secondary"
-              onClick={() => cambiarSemana(1)}
-              icon="→"
-              size="sm"
-            >
-              Semana Siguiente
-            </Button>
-          </div>
+          )}
         </div>
       </div>
 

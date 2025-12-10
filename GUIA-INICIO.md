@@ -265,3 +265,4 @@ Tu sistema está funcionando. Ahora puedes:
 ¿Necesitas ayuda con algo más? ¡Sigue los pasos y avísame si encuentras algún problema!
 
 
+

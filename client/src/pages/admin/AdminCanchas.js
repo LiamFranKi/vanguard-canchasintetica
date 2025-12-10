@@ -25,7 +25,12 @@ const AdminCanchas = () => {
     hora_inicio_atencion: '08:00',
     hora_fin_atencion: '23:00',
     precio_30min: 25.00,
-    precio_1hora: 50.00
+    precio_1hora: 50.00,
+    precio_30min_dia: 25.00,
+    precio_1hora_dia: 50.00,
+    precio_30min_noche: 35.00,
+    precio_1hora_noche: 70.00,
+    hora_limite_turno: '18:00'
   });
 
   useEffect(() => {
@@ -64,7 +69,12 @@ const AdminCanchas = () => {
       hora_inicio_atencion: cancha.hora_inicio_atencion ? cancha.hora_inicio_atencion.substring(0, 5) : '08:00',
       hora_fin_atencion: cancha.hora_fin_atencion ? cancha.hora_fin_atencion.substring(0, 5) : '23:00',
       precio_30min: cancha.precio_30min || 25.00,
-      precio_1hora: cancha.precio_1hora || 50.00
+      precio_1hora: cancha.precio_1hora || 50.00,
+      precio_30min_dia: cancha.precio_30min_dia || cancha.precio_30min || 25.00,
+      precio_1hora_dia: cancha.precio_1hora_dia || cancha.precio_1hora || 50.00,
+      precio_30min_noche: cancha.precio_30min_noche || 35.00,
+      precio_1hora_noche: cancha.precio_1hora_noche || 70.00,
+      hora_limite_turno: cancha.hora_limite_turno ? cancha.hora_limite_turno.substring(0, 5) : '18:00'
     });
     setMostrarFormulario(true);
   };
@@ -80,6 +90,11 @@ const AdminCanchas = () => {
     formDataToSend.append('hora_fin_atencion', formData.hora_fin_atencion);
     formDataToSend.append('precio_30min', formData.precio_30min);
     formDataToSend.append('precio_1hora', formData.precio_1hora);
+    formDataToSend.append('precio_30min_dia', formData.precio_30min_dia);
+    formDataToSend.append('precio_1hora_dia', formData.precio_1hora_dia);
+    formDataToSend.append('precio_30min_noche', formData.precio_30min_noche);
+    formDataToSend.append('precio_1hora_noche', formData.precio_1hora_noche);
+    formDataToSend.append('hora_limite_turno', formData.hora_limite_turno);
     if (formData.imagen) {
       formDataToSend.append('imagen', formData.imagen);
     }
@@ -108,7 +123,12 @@ const AdminCanchas = () => {
         hora_inicio_atencion: '08:00',
         hora_fin_atencion: '23:00',
         precio_30min: 25.00,
-        precio_1hora: 50.00
+        precio_1hora: 50.00,
+        precio_30min_dia: 25.00,
+        precio_1hora_dia: 50.00,
+        precio_30min_noche: 35.00,
+        precio_1hora_noche: 70.00,
+        hora_limite_turno: '18:00'
       });
       loadCanchas();
     } catch (error) {
@@ -270,6 +290,75 @@ const AdminCanchas = () => {
               required
               icon="💰"
             />
+            <FormInput
+              label="Hora Límite Turno (Día/Noche)"
+              type="time"
+              value={formData.hora_limite_turno}
+              onChange={(e) => setFormData({ ...formData, hora_limite_turno: e.target.value })}
+              required
+              icon="🌅"
+              title="Hora a partir de la cual se considera turno noche"
+            />
+          </div>
+          
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="text-lg font-semibold text-blue-800 mb-4">💰 Precios por Turno</h3>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <h4 className="font-semibold text-blue-700">☀️ Turno Día</h4>
+                <FormInput
+                  label="Precio 30 Min - Día (S/.)"
+                  type="number"
+                  step="0.01"
+                  value={formData.precio_30min_dia}
+                  onChange={(e) => setFormData({ ...formData, precio_30min_dia: parseFloat(e.target.value) || 0 })}
+                  placeholder="25.00"
+                  min="0"
+                  required
+                  icon="💰"
+                />
+                <FormInput
+                  label="Precio 1 Hora - Día (S/.)"
+                  type="number"
+                  step="0.01"
+                  value={formData.precio_1hora_dia}
+                  onChange={(e) => setFormData({ ...formData, precio_1hora_dia: parseFloat(e.target.value) || 0 })}
+                  placeholder="50.00"
+                  min="0"
+                  required
+                  icon="💰"
+                />
+              </div>
+              <div className="space-y-4">
+                <h4 className="font-semibold text-blue-700">🌙 Turno Noche</h4>
+                <FormInput
+                  label="Precio 30 Min - Noche (S/.)"
+                  type="number"
+                  step="0.01"
+                  value={formData.precio_30min_noche}
+                  onChange={(e) => setFormData({ ...formData, precio_30min_noche: parseFloat(e.target.value) || 0 })}
+                  placeholder="35.00"
+                  min="0"
+                  required
+                  icon="💰"
+                />
+                <FormInput
+                  label="Precio 1 Hora - Noche (S/.)"
+                  type="number"
+                  step="0.01"
+                  value={formData.precio_1hora_noche}
+                  onChange={(e) => setFormData({ ...formData, precio_1hora_noche: parseFloat(e.target.value) || 0 })}
+                  placeholder="70.00"
+                  min="0"
+                  required
+                  icon="💰"
+                />
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-blue-600">
+              ℹ️ El sistema calculará automáticamente el precio según la hora de inicio de la reserva.
+              Reservas antes de {formData.hora_limite_turno || '18:00'} usarán precios de día, después de esa hora usarán precios de noche.
+            </p>
           </div>
           
           <FormTextarea

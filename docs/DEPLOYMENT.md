@@ -172,3 +172,4 @@ Asegúrate de configurar todas las variables en `server/.env`:
 - `FRONTEND_URL` (URL de producción)
 
 
+

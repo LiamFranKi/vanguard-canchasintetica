@@ -187,6 +187,21 @@ router.put('/:id/confirmar', authenticate, authorize('admin', 'empleado'), async
       return res.status(404).json({ message: 'Pago no encontrado' });
     }
 
+    const pagoData = pago.rows[0];
+
+    // Obtener datos de la reserva antes de actualizar
+    const reservaData = await query(
+      `SELECT r.*, c.nombre as cancha_nombre 
+       FROM reservas r 
+       JOIN canchas c ON r.cancha_id = c.id 
+       WHERE r.id = $1`,
+      [pagoData.reserva_id]
+    );
+
+    if (reservaData.rows.length === 0) {
+      return res.status(404).json({ message: 'Reserva no encontrada' });
+    }
+
     const result = await query(
       `UPDATE pagos SET estado = 'confirmado', fecha_pago = CURRENT_TIMESTAMP 
        WHERE id = $1 RETURNING *`,
@@ -196,10 +211,48 @@ router.put('/:id/confirmar', authenticate, authorize('admin', 'empleado'), async
     // Actualizar estado de reserva
     await query(
       'UPDATE reservas SET estado = $1 WHERE id = $2',
-      ['completada', result.rows[0].reserva_id]
+      ['completada', pagoData.reserva_id]
     );
 
     res.json(result.rows[0]);
+
+    // Enviar correo de confirmación de pago al usuario en segundo plano
+    (async () => {
+      try {
+        const emailService = require('../services/email');
+        const notificationService = require('../services/notifications');
+        
+        const usuarioData = await query('SELECT nombre, apellido, email FROM usuarios WHERE id = $1', [reservaData.rows[0].usuario_id]);
+        const reservaInfo = {
+          ...reservaData.rows[0],
+          cancha_nombre: reservaData.rows[0].cancha_nombre,
+          fecha: reservaData.rows[0].fecha,
+          hora_inicio: reservaData.rows[0].hora_inicio,
+          hora_fin: reservaData.rows[0].hora_fin
+        };
+        const pagoConfirmado = result.rows[0];
+
+        // Notificación y correo al usuario
+        await notificationService.createNotification(reservaData.rows[0].usuario_id, {
+          titulo: 'Pago confirmado',
+          mensaje: `Tu pago para la reserva en ${reservaInfo.cancha_nombre} el ${reservaInfo.fecha} ha sido confirmado`,
+          tipo: 'pago',
+          relacionado_tipo: 'reserva',
+          relacionado_id: pagoData.reserva_id
+        });
+
+        if (usuarioData.rows[0]?.email) {
+          emailService.sendPaymentEmail(
+            usuarioData.rows[0].email,
+            usuarioData.rows[0].nombre,
+            reservaInfo,
+            pagoConfirmado
+          ).catch(err => console.error('Error enviando correo de pago confirmado al usuario:', err));
+        }
+      } catch (e) {
+        console.error('Error en proceso de notificación de pago confirmado:', e);
+      }
+    })();
   } catch (error) {
     console.error('Error confirmando pago:', error);
     res.status(500).json({ message: 'Error en el servidor' });

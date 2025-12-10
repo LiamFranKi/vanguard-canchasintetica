@@ -67,3 +67,4 @@ Si no tienes PostgreSQL instalado o no recuerdas la contraseña, avísame y te g
 ¿Ya tienes PostgreSQL configurado? Si sí, ejecuta el Paso 3 y me dices cómo va.
 
 
+

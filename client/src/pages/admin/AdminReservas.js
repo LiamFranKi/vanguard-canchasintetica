@@ -28,7 +28,9 @@ const AdminReservas = () => {
   const [formData, setFormData] = useState({
     hora_inicio: '',
     hora_fin: '',
-    notas: ''
+    notas: '',
+    precio_manual_enabled: false,
+    precio_manual: ''
   });
   const [formPago, setFormPago] = useState({
     metodo_pago: 'efectivo',
@@ -163,11 +165,13 @@ const AdminReservas = () => {
 
   const handleEditar = (reserva) => {
     setEditandoReserva(reserva.id);
-    setFormData({
-      hora_inicio: reserva.hora_inicio.substring(0, 5), // Formato HH:mm
-      hora_fin: reserva.hora_fin.substring(0, 5),
-      notas: reserva.notas || ''
-    });
+      setFormData({
+        hora_inicio: reserva.hora_inicio.substring(0, 5), // Formato HH:mm
+        hora_fin: reserva.hora_fin.substring(0, 5),
+        notas: reserva.notas || '',
+        precio_manual_enabled: false,
+        precio_manual: ''
+      });
   };
 
   const calcularDuracion = () => {
@@ -178,6 +182,12 @@ const AdminReservas = () => {
   };
 
   const calcularNuevoCosto = (reserva) => {
+    // Si el precio manual está habilitado, usar ese precio
+    if (formData.precio_manual_enabled && formData.precio_manual) {
+      const precioManual = parseFloat(formData.precio_manual);
+      return isNaN(precioManual) ? 0 : precioManual;
+    }
+
     const duracionMinutos = calcularDuracion();
     if (duracionMinutos <= 0) {
       // Asegurarse de que siempre devuelva un número
@@ -185,10 +195,20 @@ const AdminReservas = () => {
       return costoActual;
     }
 
-    // Usar los precios de la cancha si están disponibles, sino valores por defecto
-    // Asegurarse de que siempre sean números
-    const precio30min = parseFloat(reserva.precio_30min) || 25;
-    const precio1hora = parseFloat(reserva.precio_1hora) || 50;
+    // Determinar turno (día/noche) según la hora de inicio editada
+    const horaLimite = moment(reserva.hora_limite_turno || '18:00', 'HH:mm');
+    const horaInicioMoment = moment(formData.hora_inicio, 'HH:mm');
+    const esTurnoNoche = horaInicioMoment.isSameOrAfter(horaLimite);
+
+    // Obtener precios según el turno
+    let precio30min, precio1hora;
+    if (esTurnoNoche) {
+      precio30min = parseFloat(reserva.precio_30min_noche || reserva.precio_30min || 35);
+      precio1hora = parseFloat(reserva.precio_1hora_noche || reserva.precio_1hora || 70);
+    } else {
+      precio30min = parseFloat(reserva.precio_30min_dia || reserva.precio_30min || 25);
+      precio1hora = parseFloat(reserva.precio_1hora_dia || reserva.precio_1hora || 50);
+    }
 
     let nuevoCosto = 0;
     if (duracionMinutos <= 30) {
@@ -218,16 +238,19 @@ const AdminReservas = () => {
     if (!reserva) return;
 
     try {
+      const nuevoCosto = calcularNuevoCosto(reserva);
+      
       await api.put(`/reservas/${editandoReserva}`, {
         hora_inicio: formData.hora_inicio,
         hora_fin: formData.hora_fin,
-        notas: formData.notas
+        notas: formData.notas,
+        costo_total: nuevoCosto
       });
 
-      swalConfig.toastSuccess('Reserva Actualizada', 'La reserva se ha actualizado correctamente. El costo se ha recalculado automáticamente.');
+      swalConfig.toastSuccess('Reserva Actualizada', `La reserva se ha actualizado correctamente. Costo: S/.${nuevoCosto.toFixed(2)}`);
       
       setEditandoReserva(null);
-      setFormData({ hora_inicio: '', hora_fin: '', notas: '' });
+      setFormData({ hora_inicio: '', hora_fin: '', notas: '', precio_manual_enabled: false, precio_manual: '' });
       loadReservas();
     } catch (error) {
       swalConfig.toastError('Error', error.response?.data?.message || 'Error al actualizar la reserva');
@@ -472,7 +495,7 @@ const AdminReservas = () => {
             subtitle={`Cancha: ${reserva.cancha_nombre} - ${moment(reserva.fecha).format('DD/MM/YYYY')}`}
             onSubmit={handleGuardarEdicion}
             onCancel={handleCancelarEdicion}
-            submitLabel={`Guardar Cambios (Nuevo costo: S/.${nuevoCostoNum.toFixed(2)})`}
+            submitLabel={`Guardar Cambios (Costo: S/.${formData.precio_manual_enabled && formData.precio_manual ? parseFloat(formData.precio_manual).toFixed(2) : nuevoCostoNum.toFixed(2)})`}
             cancelLabel="Cancelar"
             className="mb-6"
           >
@@ -499,12 +522,49 @@ const AdminReservas = () => {
               <p className="text-sm text-blue-800">
                 <strong>Duración:</strong> {duracionMinutos} minutos ({Math.floor(duracionMinutos / 60)}h {duracionMinutos % 60}m)
               </p>
-              <p className="text-lg font-bold text-green-700 mt-2">
-                <strong>Costo Actual:</strong> S/.{parseFloat(reserva.costo_total || 0).toFixed(2)} → <strong>Nuevo Costo:</strong> S/.{nuevoCostoNum.toFixed(2)}
+              <p className="text-sm text-green-800 mt-1">
+                <strong>Costo Actual:</strong> S/.{parseFloat(reserva.costo_total || 0).toFixed(2)} → <strong>Costo Calculado:</strong> S/.{nuevoCostoNum.toFixed(2)}
               </p>
               {nuevoCostoNum < parseFloat(reserva.costo_total || 0) && (
                 <p className="text-sm text-green-600 mt-1">
                   ✓ Se reducirá el costo en S/.{(parseFloat(reserva.costo_total || 0) - nuevoCostoNum).toFixed(2)}
+                </p>
+              )}
+            </div>
+
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.precio_manual_enabled}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    precio_manual_enabled: e.target.checked,
+                    precio_manual: e.target.checked ? formData.precio_manual : ''
+                  })}
+                  className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                />
+                <span className="text-sm font-semibold text-yellow-800">
+                  💰 Ingresar precio manualmente (descuentos/promociones)
+                </span>
+              </label>
+              {formData.precio_manual_enabled && (
+                <FormInput
+                  label="Precio Manual (S/.)"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.precio_manual || ''}
+                  onChange={(e) => setFormData({ ...formData, precio_manual: e.target.value })}
+                  placeholder="Ingrese el precio"
+                  className="mt-3"
+                  icon="💰"
+                  required={formData.precio_manual_enabled}
+                />
+              )}
+              {formData.precio_manual_enabled && formData.precio_manual && (
+                <p className="text-sm font-bold text-green-700 mt-2">
+                  Precio Final: S/.{parseFloat(formData.precio_manual || 0).toFixed(2)}
                 </p>
               )}
             </div>

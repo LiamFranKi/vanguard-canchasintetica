@@ -5,3 +5,4 @@ INSERT INTO configuraciones (clave, valor, tipo, descripcion) VALUES
 ON CONFLICT (clave) DO NOTHING;
 
 
+

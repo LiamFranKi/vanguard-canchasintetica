@@ -1,5 +1,5 @@
 const express = require('express');
-const { query } = require('../database/connection');
+const { query, transaction } = require('../database/connection');
 const { authenticate, authorize } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const moment = require('moment');
@@ -49,6 +49,11 @@ router.get('/', authenticate, async (req, res) => {
              c.nombre as cancha_nombre,
              c.precio_30min,
              c.precio_1hora,
+             c.precio_30min_dia,
+             c.precio_1hora_dia,
+             c.precio_30min_noche,
+             c.precio_1hora_noche,
+             c.hora_limite_turno,
              c.hora_inicio_atencion,
              c.hora_fin_atencion,
              u.nombre || ' ' || u.apellido as usuario_nombre,
@@ -124,6 +129,28 @@ router.get('/', authenticate, async (req, res) => {
     sql += ' ORDER BY r.fecha DESC, r.hora_inicio DESC';
 
     const result = await query(sql, params);
+    
+    // Para usuarios regulares, agregar contactos de empleados asignados a cada cancha
+    if (req.user.rol === 'usuario') {
+      const reservasConContactos = await Promise.all(
+        result.rows.map(async (reserva) => {
+          const contactosResult = await query(
+            `SELECT u.telefono 
+             FROM cancha_personal cp
+             JOIN usuarios u ON cp.usuario_id = u.id
+             WHERE cp.cancha_id = $1 AND u.telefono IS NOT NULL AND u.telefono != ''
+             ORDER BY u.nombre, u.apellido`,
+            [reserva.cancha_id]
+          );
+          
+          const telefonos = contactosResult.rows.map(r => r.telefono).filter(t => t);
+          reserva.contactos = telefonos;
+          return reserva;
+        })
+      );
+      return res.json(reservasConContactos);
+    }
+    
     res.json(result.rows);
   } catch (error) {
     console.error('Error obteniendo reservas:', error);
@@ -265,7 +292,7 @@ router.post('/', authenticate, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { cancha_id, fecha, hora_inicio, hora_fin, notas } = req.body;
+    const { cancha_id, fecha, hora_inicio, hora_fin, notas, costo_total } = req.body;
     const usuario_id = req.user.rol === 'usuario' ? req.user.id : req.body.usuario_id;
     const empleado_id = (req.user.rol === 'admin' || req.user.rol === 'empleado') ? req.user.id : null;
 
@@ -284,83 +311,117 @@ router.post('/', authenticate, [
       }
     }
 
-    // Verificar disponibilidad
-    const disponibilidad = await query(
-      `SELECT COUNT(*) as count FROM reservas 
-       WHERE cancha_id = $1 AND fecha = $2 
-       AND estado IN ('pendiente', 'confirmada', 'completada')
-       AND (
-         (hora_inicio <= $3 AND hora_fin > $3) OR
-         (hora_inicio < $4 AND hora_fin >= $4) OR
-         (hora_inicio >= $3 AND hora_fin <= $4)
-       )`,
-      [cancha_id, fecha, hora_inicio, hora_fin]
-    );
+    // Usar transacción para prevenir condiciones de carrera (race conditions)
+    // Protege contra reservas simultáneas cuando múltiples usuarios/clientes/empleados
+    // intentan reservar la misma hora al mismo tiempo
+    const result = await transaction(async (client) => {
+      // Bloquear filas existentes con SELECT FOR UPDATE para prevenir reservas simultáneas
+      // Esto asegura que solo la primera solicitud pueda crear la reserva
+      const disponibilidad = await client.query(
+        `SELECT id FROM reservas 
+         WHERE cancha_id = $1 AND fecha = $2 
+         AND estado IN ('pendiente', 'confirmada', 'completada')
+         AND (
+           (hora_inicio <= $3 AND hora_fin > $3) OR
+           (hora_inicio < $4 AND hora_fin >= $4) OR
+           (hora_inicio >= $3 AND hora_fin <= $4)
+         )
+         FOR UPDATE`,
+        [cancha_id, fecha, hora_inicio, hora_fin]
+      );
 
-    if (parseInt(disponibilidad.rows[0].count) > 0) {
-      return res.status(400).json({ message: 'El horario seleccionado no está disponible' });
-    }
+      if (disponibilidad.rows.length > 0) {
+        throw new Error('El horario seleccionado no está disponible');
+      }
 
-    // Obtener datos de la cancha (incluyendo precios)
-    const canchaResult = await query(
-      'SELECT precio_30min, precio_1hora, hora_inicio_atencion, hora_fin_atencion FROM canchas WHERE id = $1',
-      [cancha_id]
-    );
+      // Obtener datos de la cancha con bloqueo para consistencia
+      const canchaResult = await client.query(
+        `SELECT 
+          precio_30min, precio_1hora,
+          precio_30min_dia, precio_1hora_dia,
+          precio_30min_noche, precio_1hora_noche,
+          hora_limite_turno,
+          hora_inicio_atencion, hora_fin_atencion 
+        FROM canchas WHERE id = $1 FOR UPDATE`,
+        [cancha_id]
+      );
 
-    if (canchaResult.rows.length === 0) {
-      return res.status(400).json({ message: 'Cancha no encontrada' });
-    }
+      if (canchaResult.rows.length === 0) {
+        throw new Error('Cancha no encontrada');
+      }
 
-    const cancha = canchaResult.rows[0];
-    const precio30min = parseFloat(cancha.precio_30min || 25);
-    const precio1hora = parseFloat(cancha.precio_1hora || 50);
+      const cancha = canchaResult.rows[0];
+      
+      // Calcular duración en minutos
+      const inicio = moment(hora_inicio, 'HH:mm:ss');
+      const fin = moment(hora_fin, 'HH:mm:ss');
+      const duracionMinutos = fin.diff(inicio, 'minutes');
 
-    // Calcular duración en minutos
-    const inicio = moment(hora_inicio, 'HH:mm:ss');
-    const fin = moment(hora_fin, 'HH:mm:ss');
-    const duracionMinutos = fin.diff(inicio, 'minutes');
+      // Determinar turno (día o noche) según la hora de inicio
+      const horaLimite = moment(cancha.hora_limite_turno || '18:00', 'HH:mm:ss');
+      const esTurnoNoche = inicio.isSameOrAfter(horaLimite);
 
-    // Calcular costo basado en la duración
-    let costoTotal = 0;
-    
-    if (duracionMinutos <= 30) {
-      costoTotal = precio30min;
-    } else if (duracionMinutos <= 60) {
-      costoTotal = precio1hora;
-    } else if (duracionMinutos <= 90) {
-      costoTotal = precio1hora + precio30min;
-    } else if (duracionMinutos <= 120) {
-      costoTotal = precio1hora * 2;
-    } else {
-      // Para duraciones mayores, calcular proporcionalmente
-      const horas = duracionMinutos / 60;
-      costoTotal = precio1hora * horas;
-    }
+      // Obtener precios según el turno
+      let precio30min, precio1hora;
+      if (esTurnoNoche) {
+        precio30min = parseFloat(cancha.precio_30min_noche || cancha.precio_30min || 35);
+        precio1hora = parseFloat(cancha.precio_1hora_noche || cancha.precio_1hora || 70);
+      } else {
+        precio30min = parseFloat(cancha.precio_30min_dia || cancha.precio_30min || 25);
+        precio1hora = parseFloat(cancha.precio_1hora_dia || cancha.precio_1hora || 50);
+      }
 
-    // Verificar que el horario esté dentro del rango de atención de la cancha
-    const horaInicioAtencion = moment(cancha.hora_inicio_atencion || '08:00', 'HH:mm:ss');
-    const horaFinAtencion = moment(cancha.hora_fin_atencion || '23:00', 'HH:mm:ss');
-    
-    if (inicio.isBefore(horaInicioAtencion) || fin.isAfter(horaFinAtencion)) {
-      return res.status(400).json({ 
-        message: `El horario debe estar entre ${horaInicioAtencion.format('HH:mm')} y ${horaFinAtencion.format('HH:mm')}` 
-      });
-    }
+      // Calcular costo basado en la duración (o usar el costo_total si viene del frontend)
+      let costoTotal = 0;
+      
+      // Si se proporciona un costo_total manualmente, usarlo; sino calcularlo
+      if (costo_total !== undefined && costo_total !== null && costo_total !== '') {
+        costoTotal = parseFloat(costo_total);
+        if (isNaN(costoTotal) || costoTotal < 0) {
+          throw new Error('El costo total debe ser un número válido mayor o igual a 0');
+        }
+      } else {
+        // Calcular automáticamente según duración y turno
+        if (duracionMinutos <= 30) {
+          costoTotal = precio30min;
+        } else if (duracionMinutos <= 60) {
+          costoTotal = precio1hora;
+        } else if (duracionMinutos <= 90) {
+          costoTotal = precio1hora + precio30min;
+        } else if (duracionMinutos <= 120) {
+          costoTotal = precio1hora * 2;
+        } else {
+          // Para duraciones mayores, calcular proporcionalmente
+          const horas = duracionMinutos / 60;
+          costoTotal = precio1hora * horas;
+        }
+      }
 
-    // Crear reserva
-    const result = await query(
-      `INSERT INTO reservas (cancha_id, usuario_id, empleado_id, fecha, hora_inicio, hora_fin, costo_total, notas)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING *`,
-      [cancha_id, usuario_id, empleado_id, fecha, hora_inicio, hora_fin, costoTotal, notas || null]
-    );
+      // Verificar que el horario esté dentro del rango de atención de la cancha
+      const horaInicioAtencion = moment(cancha.hora_inicio_atencion || '08:00', 'HH:mm:ss');
+      const horaFinAtencion = moment(cancha.hora_fin_atencion || '23:00', 'HH:mm:ss');
+      
+      if (inicio.isBefore(horaInicioAtencion) || fin.isAfter(horaFinAtencion)) {
+        throw new Error(`El horario debe estar entre ${horaInicioAtencion.format('HH:mm')} y ${horaFinAtencion.format('HH:mm')}`);
+      }
+
+      // Crear reserva dentro de la transacción
+      const insertResult = await client.query(
+        `INSERT INTO reservas (cancha_id, usuario_id, empleado_id, fecha, hora_inicio, hora_fin, costo_total, notas)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING *`,
+        [cancha_id, usuario_id, empleado_id, fecha, hora_inicio, hora_fin, costoTotal, notas || null]
+      );
+
+      return insertResult;
+    });
 
     const reserva = result.rows[0];
 
     // Responder inmediatamente sin esperar notificaciones/correos
     res.status(201).json({
       ...reserva,
-      costo_total: costoTotal
+      costo_total: parseFloat(reserva.costo_total)
     });
 
     // Enviar notificación y correo en segundo plano (asíncrono, no bloquea la respuesta)
@@ -419,10 +480,12 @@ router.post('/', authenticate, [
           });
 
           if (emp.email) {
-            emailService.sendReservationEmail(
+            const usuarioNombreCompleto = `${usuarioData.rows[0].nombre} ${usuarioData.rows[0].apellido}`;
+            emailService.sendNewReservationNotificationToStaff(
               emp.email,
               emp.nombre,
-              reservaInfo
+              reservaInfo,
+              usuarioNombreCompleto
             ).catch(emailError => console.error('Error enviando correo de nueva reserva al personal:', emailError));
           }
         }
@@ -432,6 +495,17 @@ router.post('/', authenticate, [
     })();
   } catch (error) {
     console.error('Error creando reserva:', error);
+    
+    // Si el error es de disponibilidad, devolver un mensaje específico
+    if (error.message === 'El horario seleccionado no está disponible') {
+      return res.status(400).json({ message: error.message });
+    }
+    
+    // Para otros errores de validación
+    if (error.message && (error.message.includes('no encontrada') || error.message.includes('debe estar entre') || error.message.includes('debe ser un número'))) {
+      return res.status(400).json({ message: error.message });
+    }
+    
     res.status(500).json({ message: 'Error en el servidor' });
   }
 });
@@ -449,11 +523,16 @@ router.put('/:id', authenticate, [
     }
 
     const { id } = req.params;
-    const { hora_inicio, hora_fin, notas } = req.body;
+    const { hora_inicio, hora_fin, notas, costo_total } = req.body;
 
     // Obtener la reserva actual con datos de la cancha
     const reservaActual = await query(
-      `SELECT r.*, c.precio_30min, c.precio_1hora, c.hora_inicio_atencion, c.hora_fin_atencion
+      `SELECT r.*, 
+        c.precio_30min, c.precio_1hora,
+        c.precio_30min_dia, c.precio_1hora_dia,
+        c.precio_30min_noche, c.precio_1hora_noche,
+        c.hora_limite_turno,
+        c.hora_inicio_atencion, c.hora_fin_atencion
        FROM reservas r
        JOIN canchas c ON r.cancha_id = c.id
        WHERE r.id = $1`,
@@ -480,9 +559,17 @@ router.put('/:id', authenticate, [
     let nuevaHoraFin = hora_fin || reserva.hora_fin;
     const nuevasNotas = notas !== undefined ? notas : reserva.notas;
 
-    // Si se cambió el tiempo, recalcular el costo
+    // Si se proporciona costo_total manualmente, usarlo; sino recalcular si cambió el tiempo
     let nuevoCostoTotal = reserva.costo_total;
-    if (hora_inicio || hora_fin) {
+    
+    if (costo_total !== undefined && costo_total !== null && costo_total !== '') {
+      // Usar el costo manual proporcionado
+      nuevoCostoTotal = parseFloat(costo_total);
+      if (isNaN(nuevoCostoTotal) || nuevoCostoTotal < 0) {
+        return res.status(400).json({ message: 'El costo total debe ser un número válido mayor o igual a 0' });
+      }
+    } else if (hora_inicio || hora_fin) {
+      // Recalcular automáticamente si cambió el tiempo
       const inicio = moment(nuevaHoraInicio, 'HH:mm:ss');
       const fin = moment(nuevaHoraFin, 'HH:mm:ss');
       const duracionMinutos = fin.diff(inicio, 'minutes');
@@ -491,8 +578,19 @@ router.put('/:id', authenticate, [
         return res.status(400).json({ message: 'La hora fin debe ser mayor que la hora inicio' });
       }
 
-      const precio30min = parseFloat(reserva.precio_30min || 25);
-      const precio1hora = parseFloat(reserva.precio_1hora || 50);
+      // Determinar turno según la nueva hora de inicio
+      const horaLimite = moment(reserva.hora_limite_turno || '18:00', 'HH:mm:ss');
+      const esTurnoNoche = inicio.isSameOrAfter(horaLimite);
+
+      // Obtener precios según el turno
+      let precio30min, precio1hora;
+      if (esTurnoNoche) {
+        precio30min = parseFloat(reserva.precio_30min_noche || reserva.precio_30min || 35);
+        precio1hora = parseFloat(reserva.precio_1hora_noche || reserva.precio_1hora || 70);
+      } else {
+        precio30min = parseFloat(reserva.precio_30min_dia || reserva.precio_30min || 25);
+        precio1hora = parseFloat(reserva.precio_1hora_dia || reserva.precio_1hora || 50);
+      }
 
       // Calcular nuevo costo
       if (duracionMinutos <= 30) {
@@ -507,7 +605,13 @@ router.put('/:id', authenticate, [
         const horas = duracionMinutos / 60;
         nuevoCostoTotal = precio1hora * horas;
       }
+    }
 
+    // Si cambió el horario, validar horario y disponibilidad (sin importar si cambió el costo)
+    if (hora_inicio || hora_fin) {
+      const inicio = moment(nuevaHoraInicio, 'HH:mm:ss');
+      const fin = moment(nuevaHoraFin, 'HH:mm:ss');
+      
       // Verificar que el nuevo horario esté dentro del rango de atención
       const horaInicioAtencion = moment(reserva.hora_inicio_atencion || '08:00', 'HH:mm:ss');
       const horaFinAtencion = moment(reserva.hora_fin_atencion || '23:00', 'HH:mm:ss');
@@ -552,6 +656,11 @@ router.put('/:id', authenticate, [
               c.nombre as cancha_nombre,
               c.precio_30min,
               c.precio_1hora,
+              c.precio_30min_dia,
+              c.precio_1hora_dia,
+              c.precio_30min_noche,
+              c.precio_1hora_noche,
+              c.hora_limite_turno,
               u.nombre || ' ' || u.apellido as usuario_nombre
        FROM reservas r
        JOIN canchas c ON r.cancha_id = c.id
@@ -844,6 +953,19 @@ router.put('/:id/pago/confirmar', authenticate, authorize('admin', 'empleado'), 
 
     const pagoId = pago.rows[0].id;
 
+    // Obtener datos de la reserva antes de actualizar
+    const reservaData = await query(
+      `SELECT r.*, c.nombre as cancha_nombre 
+       FROM reservas r 
+       JOIN canchas c ON r.cancha_id = c.id 
+       WHERE r.id = $1`,
+      [id]
+    );
+
+    if (reservaData.rows.length === 0) {
+      return res.status(404).json({ message: 'Reserva no encontrada' });
+    }
+
     // Confirmar el pago
     const result = await query(
       `UPDATE pagos SET estado = 'confirmado', fecha_pago = CURRENT_TIMESTAMP 
@@ -858,6 +980,41 @@ router.put('/:id/pago/confirmar', authenticate, authorize('admin', 'empleado'), 
     );
 
     res.json(result.rows[0]);
+
+    // Enviar correo de confirmación de pago al usuario en segundo plano
+    (async () => {
+      try {
+        const usuarioData = await query('SELECT nombre, apellido, email FROM usuarios WHERE id = $1', [reservaData.rows[0].usuario_id]);
+        const reservaInfo = {
+          ...reservaData.rows[0],
+          cancha_nombre: reservaData.rows[0].cancha_nombre,
+          fecha: reservaData.rows[0].fecha,
+          hora_inicio: reservaData.rows[0].hora_inicio,
+          hora_fin: reservaData.rows[0].hora_fin
+        };
+        const pagoConfirmado = result.rows[0];
+
+        // Notificación y correo al usuario
+        await notificationService.createNotification(reservaData.rows[0].usuario_id, {
+          titulo: 'Pago confirmado',
+          mensaje: `Tu pago para la reserva en ${reservaInfo.cancha_nombre} el ${reservaInfo.fecha} ha sido confirmado`,
+          tipo: 'pago',
+          relacionado_tipo: 'reserva',
+          relacionado_id: id
+        });
+
+        if (usuarioData.rows[0]?.email) {
+          emailService.sendPaymentEmail(
+            usuarioData.rows[0].email,
+            usuarioData.rows[0].nombre,
+            reservaInfo,
+            pagoConfirmado
+          ).catch(err => console.error('Error enviando correo de pago confirmado al usuario:', err));
+        }
+      } catch (e) {
+        console.error('Error en proceso de notificación de pago confirmado:', e);
+      }
+    })();
   } catch (error) {
     console.error('Error confirmando pago:', error);
     res.status(500).json({ message: 'Error en el servidor' });

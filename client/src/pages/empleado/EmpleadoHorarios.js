@@ -39,7 +39,9 @@ const EmpleadoHorarios = () => {
     hora_inicio: '',
     hora_fin: '',
     duracion: '30',
-    notas: ''
+    notas: '',
+    precio_manual_enabled: false,
+    precio_manual: ''
   });
   const [usuarios, setUsuarios] = useState([]);
   
@@ -237,8 +239,17 @@ const EmpleadoHorarios = () => {
       const inicio = current.format('HH:mm');
       const fin = current.clone().add(30, 'minutes').format('HH:mm');
       
-      const precio30min = parseFloat(canchaData.precio_30min || 25);
-      const precio1hora = parseFloat(canchaData.precio_1hora || 50);
+      // Calcular precio según turno (día/noche) según la hora del slot
+      const horaLimite = moment(canchaData.hora_limite_turno || '18:00', 'HH:mm');
+      const horaSlot = moment(inicio, 'HH:mm');
+      const esTurnoNoche = horaSlot.isSameOrAfter(horaLimite);
+      
+      const precio30min = esTurnoNoche 
+        ? parseFloat(canchaData.precio_30min_noche || canchaData.precio_30min || 35)
+        : parseFloat(canchaData.precio_30min_dia || canchaData.precio_30min || 25);
+      const precio1hora = esTurnoNoche
+        ? parseFloat(canchaData.precio_1hora_noche || canchaData.precio_1hora || 70)
+        : parseFloat(canchaData.precio_1hora_dia || canchaData.precio_1hora || 50);
       
       slots.push({
         inicio,
@@ -289,7 +300,9 @@ const EmpleadoHorarios = () => {
         hora_inicio: reservaOcupada.hora_inicio.substring(0, 5),
         hora_fin: reservaOcupada.hora_fin.substring(0, 5),
         duracion: moment(reservaOcupada.hora_fin, 'HH:mm:ss').diff(moment(reservaOcupada.hora_inicio, 'HH:mm:ss'), 'minutes').toString(),
-        notas: reservaOcupada.notas || ''
+        notas: reservaOcupada.notas || '',
+        precio_manual_enabled: false,
+        precio_manual: ''
       });
       setMostrarModalEditar(true);
       return;
@@ -323,13 +336,30 @@ const EmpleadoHorarios = () => {
     return fin.diff(inicio, 'minutes');
   };
 
-  const calcularPrecio = (duracion) => {
+  const calcularPrecio = (duracion, horaInicio = null) => {
     if (!canchaData) return 0;
     
     const minutos = typeof duracion === 'string' ? parseInt(duracion) : duracion;
     
-    const precio30min = parseFloat(canchaData.precio_30min || 25);
-    const precio1hora = parseFloat(canchaData.precio_1hora || 50);
+    // Determinar turno (día/noche) según la hora de inicio
+    let precio30min, precio1hora;
+    if (horaInicio) {
+      const horaLimite = moment(canchaData.hora_limite_turno || '18:00', 'HH:mm');
+      const horaInicioMoment = moment(horaInicio, 'HH:mm');
+      const esTurnoNoche = horaInicioMoment.isSameOrAfter(horaLimite);
+      
+      if (esTurnoNoche) {
+        precio30min = parseFloat(canchaData.precio_30min_noche || canchaData.precio_30min || 35);
+        precio1hora = parseFloat(canchaData.precio_1hora_noche || canchaData.precio_1hora || 70);
+      } else {
+        precio30min = parseFloat(canchaData.precio_30min_dia || canchaData.precio_30min || 25);
+        precio1hora = parseFloat(canchaData.precio_1hora_dia || canchaData.precio_1hora || 50);
+      }
+    } else {
+      // Fallback a precios antiguos si no hay hora de inicio
+      precio30min = parseFloat(canchaData.precio_30min || 25);
+      precio1hora = parseFloat(canchaData.precio_1hora || 50);
+    }
     
     if (minutos <= 30) return precio30min;
     if (minutos <= 60) return precio1hora;
@@ -370,7 +400,10 @@ const EmpleadoHorarios = () => {
     }
 
     const horaFinCalculada = calcularHoraFin(formReserva.hora_inicio, formReserva.duracion);
-    const precio = calcularPrecio(formReserva.duracion);
+    const precioCalculado = calcularPrecio(formReserva.duracion, formReserva.hora_inicio);
+    const precioFinal = formReserva.precio_manual_enabled && formReserva.precio_manual 
+      ? parseFloat(formReserva.precio_manual) 
+      : precioCalculado;
 
     try {
       if (reservaSeleccionada) {
@@ -378,9 +411,10 @@ const EmpleadoHorarios = () => {
         await api.put(`/reservas/${reservaSeleccionada.id}`, {
           hora_inicio: formReserva.hora_inicio,
           hora_fin: horaFinCalculada,
-          notas: formReserva.notas
+          notas: formReserva.notas,
+          costo_total: precioFinal
         });
-        swalConfig.toastSuccess('¡Reserva Actualizada!', `Reserva actualizada exitosamente. Nuevo costo: S/.${precio.toFixed(2)}`);
+        swalConfig.toastSuccess('¡Reserva Actualizada!', `Reserva actualizada exitosamente. Nuevo costo: S/.${precioFinal.toFixed(2)}`);
         setMostrarModalEditar(false);
       } else {
         // Crear nueva reserva
@@ -390,9 +424,10 @@ const EmpleadoHorarios = () => {
           fecha: formReserva.fecha,
           hora_inicio: formReserva.hora_inicio,
           hora_fin: horaFinCalculada,
-          notas: formReserva.notas
+          notas: formReserva.notas,
+          costo_total: precioFinal
         });
-        swalConfig.toastSuccess('¡Reserva Creada!', `Reserva creada exitosamente. Costo: S/.${precio.toFixed(2)}`);
+        swalConfig.toastSuccess('¡Reserva Creada!', `Reserva creada exitosamente. Costo: S/.${precioFinal.toFixed(2)}`);
         setMostrarModalReserva(false);
       }
       
@@ -405,7 +440,9 @@ const EmpleadoHorarios = () => {
         hora_inicio: '',
         hora_fin: '',
         duracion: '30',
-        notas: ''
+        notas: '',
+        precio_manual_enabled: false,
+        precio_manual: ''
       });
       loadReservasSemana();
     } catch (error) {
@@ -631,7 +668,7 @@ const EmpleadoHorarios = () => {
                   notas: ''
                 });
               }}
-              submitLabel={`Reservar (S/.${calcularPrecio(formReserva.duracion).toFixed(2)})`}
+              submitLabel={`Reservar (S/.${formReserva.precio_manual_enabled && formReserva.precio_manual ? parseFloat(formReserva.precio_manual).toFixed(2) : calcularPrecio(formReserva.duracion, formReserva.hora_inicio).toFixed(2)})`}
               cancelLabel="Cancelar"
             >
               <FormInput
@@ -743,8 +780,45 @@ const EmpleadoHorarios = () => {
                   <strong>Hora Fin:</strong> {calcularHoraFin(formReserva.hora_inicio, formReserva.duracion)}
                 </p>
                 <p className="text-lg font-bold text-green-700 mt-2">
-                  Costo Total: S/.{calcularPrecio(formReserva.duracion).toFixed(2)}
+                  Costo Calculado: S/.{calcularPrecio(formReserva.duracion, formReserva.hora_inicio).toFixed(2)}
                 </p>
+              </div>
+
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formReserva.precio_manual_enabled}
+                    onChange={(e) => setFormReserva({ 
+                      ...formReserva, 
+                      precio_manual_enabled: e.target.checked,
+                      precio_manual: e.target.checked ? formReserva.precio_manual : ''
+                    })}
+                    className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                  />
+                  <span className="text-sm font-semibold text-yellow-800">
+                    💰 Ingresar precio manualmente (descuentos/promociones)
+                  </span>
+                </label>
+                {formReserva.precio_manual_enabled && (
+                  <FormInput
+                    label="Precio Manual (S/.)"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formReserva.precio_manual || ''}
+                    onChange={(e) => setFormReserva({ ...formReserva, precio_manual: e.target.value })}
+                    placeholder="Ingrese el precio"
+                    className="mt-3"
+                    icon="💰"
+                    required={formReserva.precio_manual_enabled}
+                  />
+                )}
+                {formReserva.precio_manual_enabled && formReserva.precio_manual && (
+                  <p className="text-sm font-bold text-green-700 mt-2">
+                    Precio Final: S/.{parseFloat(formReserva.precio_manual || 0).toFixed(2)}
+                  </p>
+                )}
               </div>
 
               <FormInput
@@ -782,7 +856,7 @@ const EmpleadoHorarios = () => {
                   notas: ''
                 });
               }}
-              submitLabel={`Guardar Cambios (Nuevo costo: S/.${calcularPrecio(calcularDuracion()).toFixed(2)})`}
+              submitLabel={`Guardar Cambios (Costo: S/.${formReserva.precio_manual_enabled && formReserva.precio_manual ? parseFloat(formReserva.precio_manual).toFixed(2) : calcularPrecio(calcularDuracion(), formReserva.hora_inicio).toFixed(2)})`}
               cancelLabel="Cancelar"
             >
               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -854,17 +928,54 @@ const EmpleadoHorarios = () => {
                 <p className="text-sm text-green-800">
                   <strong>Duración:</strong> {calcularDuracion()} minutos ({Math.floor(calcularDuracion() / 60)}h {calcularDuracion() % 60}m)
                 </p>
-                <p className="text-lg font-bold text-green-700 mt-2">
-                  <strong>Costo Actual:</strong> S/.{parseFloat(reservaSeleccionada.costo_total).toFixed(2)} → <strong>Nuevo Costo:</strong> S/.{calcularPrecio(calcularDuracion()).toFixed(2)}
+                <p className="text-sm text-green-800 mt-1">
+                  <strong>Costo Actual:</strong> S/.{parseFloat(reservaSeleccionada.costo_total).toFixed(2)} → <strong>Costo Calculado:</strong> S/.{calcularPrecio(calcularDuracion(), formReserva.hora_inicio).toFixed(2)}
                 </p>
-                {calcularPrecio(calcularDuracion()) < parseFloat(reservaSeleccionada.costo_total) && (
+                {calcularPrecio(calcularDuracion(), formReserva.hora_inicio) < parseFloat(reservaSeleccionada.costo_total) && (
                   <p className="text-sm text-green-600 mt-1">
-                    ✓ Se reducirá el costo en S/.{(parseFloat(reservaSeleccionada.costo_total) - calcularPrecio(calcularDuracion())).toFixed(2)}
+                    ✓ Se reducirá el costo en S/.{(parseFloat(reservaSeleccionada.costo_total) - calcularPrecio(calcularDuracion(), formReserva.hora_inicio)).toFixed(2)}
                   </p>
                 )}
-                {calcularPrecio(calcularDuracion()) > parseFloat(reservaSeleccionada.costo_total) && (
+                {calcularPrecio(calcularDuracion(), formReserva.hora_inicio) > parseFloat(reservaSeleccionada.costo_total) && (
                   <p className="text-sm text-orange-600 mt-1">
-                    ⚠ Se incrementará el costo en S/.{(calcularPrecio(calcularDuracion()) - parseFloat(reservaSeleccionada.costo_total)).toFixed(2)}
+                    ⚠ Se incrementará el costo en S/.{(calcularPrecio(calcularDuracion(), formReserva.hora_inicio) - parseFloat(reservaSeleccionada.costo_total)).toFixed(2)}
+                  </p>
+                )}
+              </div>
+
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formReserva.precio_manual_enabled}
+                    onChange={(e) => setFormReserva({ 
+                      ...formReserva, 
+                      precio_manual_enabled: e.target.checked,
+                      precio_manual: e.target.checked ? formReserva.precio_manual : ''
+                    })}
+                    className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                  />
+                  <span className="text-sm font-semibold text-yellow-800">
+                    💰 Ingresar precio manualmente (descuentos/promociones)
+                  </span>
+                </label>
+                {formReserva.precio_manual_enabled && (
+                  <FormInput
+                    label="Precio Manual (S/.)"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formReserva.precio_manual || ''}
+                    onChange={(e) => setFormReserva({ ...formReserva, precio_manual: e.target.value })}
+                    placeholder="Ingrese el precio"
+                    className="mt-3"
+                    icon="💰"
+                    required={formReserva.precio_manual_enabled}
+                  />
+                )}
+                {formReserva.precio_manual_enabled && formReserva.precio_manual && (
+                  <p className="text-sm font-bold text-green-700 mt-2">
+                    Precio Final: S/.{parseFloat(formReserva.precio_manual || 0).toFixed(2)}
                   </p>
                 )}
               </div>

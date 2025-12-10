@@ -19,6 +19,8 @@ const LandingPage = () => {
       setCanchas(response.data.slice(0, 3)); // Mostrar solo 3
     } catch (error) {
       console.error('Error cargando canchas:', error);
+      // No redirigir si es error 401 en landing page, solo mostrar error silencioso
+      setCanchas([]);
     } finally {
       setLoading(false);
     }

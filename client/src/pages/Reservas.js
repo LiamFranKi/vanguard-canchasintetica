@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useConfig } from '../context/ConfigContext';
 import api from '../services/api';
 import moment from 'moment';
 import swalConfig from '../utils/swalConfig';
@@ -14,6 +15,7 @@ const Reservas = () => {
   const [reservas, setReservas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [filtroTipo, setFiltroTipo] = useState('nuevas'); // 'nuevas' o 'pasadas'
   const [formData, setFormData] = useState({
     cancha_id: '',
     fecha: '',
@@ -24,6 +26,7 @@ const Reservas = () => {
   const [canchas, setCanchas] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
+  const { getConfig } = useConfig();
 
   useEffect(() => {
     loadReservas();
@@ -116,6 +119,29 @@ const Reservas = () => {
     return colores[estado] || 'bg-gray-100 text-gray-800';
   };
 
+  // Calcular días restantes para pagar
+  const calcularDiasRestantes = (fechaCreacion) => {
+    if (!fechaCreacion) return null;
+    const diasMax = parseInt(getConfig('dias_max_pago') || '3', 10);
+    const fechaLimite = moment(fechaCreacion).add(diasMax, 'days');
+    const diasRestantes = fechaLimite.diff(moment(), 'days');
+    return diasRestantes;
+  };
+
+  // Filtrar reservas según el tipo (nuevas o pasadas)
+  const reservasFiltradas = reservas.filter((reserva) => {
+    const fechaReserva = moment(reserva.fecha);
+    const hoy = moment().startOf('day');
+    
+    if (filtroTipo === 'nuevas') {
+      // Reservas nuevas: fecha >= hoy
+      return fechaReserva.isSameOrAfter(hoy, 'day');
+    } else {
+      // Reservas pasadas: fecha < hoy
+      return fechaReserva.isBefore(hoy, 'day');
+    }
+  });
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -198,6 +224,32 @@ const Reservas = () => {
         </FormCard>
       )}
 
+      {/* Tabs para Reservas Nuevas y Pasadas */}
+      {!loading && reservas.length > 0 && (
+        <div className="flex gap-4 mb-6 border-b border-gray-200">
+          <button
+            onClick={() => setFiltroTipo('nuevas')}
+            className={`px-6 py-3 font-semibold text-lg transition-all duration-200 border-b-4 ${
+              filtroTipo === 'nuevas'
+                ? 'border-green-500 text-green-600 bg-green-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            📅 Reservas Nuevas
+          </button>
+          <button
+            onClick={() => setFiltroTipo('pasadas')}
+            className={`px-6 py-3 font-semibold text-lg transition-all duration-200 border-b-4 ${
+              filtroTipo === 'pasadas'
+                ? 'border-blue-500 text-blue-600 bg-blue-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            📜 Reservas Pasadas
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-center py-12">
           <div className="text-gray-500">Cargando reservas...</div>
@@ -216,9 +268,21 @@ const Reservas = () => {
             Ver Horarios Disponibles
           </Button>
         </Card>
+      ) : reservasFiltradas.length === 0 ? (
+        <Card className="text-center py-16">
+          <div className="text-7xl mb-6">📋</div>
+          <h3 className="text-2xl font-bold text-gray-800 mb-3">
+            No hay {filtroTipo === 'nuevas' ? 'reservas nuevas' : 'reservas pasadas'}
+          </h3>
+          <p className="text-gray-600 mb-8 text-lg">
+            {filtroTipo === 'nuevas' 
+              ? 'Todavía no tienes reservas futuras' 
+              : 'Todavía no tienes reservas pasadas'}
+          </p>
+        </Card>
       ) : (
         <div className="space-y-4">
-          {reservas.map((reserva) => (
+          {reservasFiltradas.map((reserva) => (
             <Card
               key={reserva.id}
               className="border-l-4 border-green-500 hover:shadow-xl transition-all duration-300"
@@ -265,10 +329,90 @@ const Reservas = () => {
                       </p>
                     </div>
                   )}
+
+                  {/* Contador de días restantes para pagar (solo para reservas pendientes sin pago confirmado) */}
+                  {reserva.estado === 'pendiente' && reserva.pago_estado !== 'confirmado' && reserva.created_at && (
+                    (() => {
+                      const diasRestantes = calcularDiasRestantes(reserva.created_at);
+                      const diasMax = parseInt(getConfig('dias_max_pago') || '3', 10);
+                      
+                      if (diasRestantes !== null) {
+                        if (diasRestantes < 0) {
+                          return (
+                            <div className="mt-4 p-4 bg-red-50 rounded-lg border-2 border-red-300">
+                              <p className="text-sm font-bold text-red-800 mb-1">
+                                ⚠️ Tiempo de pago vencido
+                              </p>
+                              <p className="text-xs text-red-700">
+                                Esta reserva será cancelada automáticamente y el horario se liberará.
+                              </p>
+                            </div>
+                          );
+                        } else if (diasRestantes === 0) {
+                          return (
+                            <div className="mt-4 p-4 bg-orange-50 rounded-lg border-2 border-orange-300">
+                              <p className="text-sm font-bold text-orange-800 mb-1">
+                                ⚠️ Último día para pagar
+                              </p>
+                              <p className="text-xs text-orange-700">
+                                Debes realizar el pago hoy o la reserva se cancelará automáticamente y se liberará el horario.
+                              </p>
+                            </div>
+                          );
+                        } else if (diasRestantes === 1) {
+                          return (
+                            <div className="mt-4 p-4 bg-yellow-50 rounded-lg border-2 border-yellow-300">
+                              <p className="text-sm font-bold text-yellow-800 mb-1">
+                                ⏰ Queda 1 día para pagar
+                              </p>
+                              <p className="text-xs text-yellow-700">
+                                Realiza el pago antes de mañana o la reserva se cancelará automáticamente y se liberará el horario.
+                              </p>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                              <p className="text-sm font-semibold text-blue-800">
+                                ⏰ Tienes <strong className="text-lg">{diasRestantes} día{diasRestantes !== 1 ? 's' : ''}</strong> para realizar el pago
+                              </p>
+                              <p className="text-xs text-blue-700 mt-1">
+                                Si no pagas en {diasRestantes} día{diasRestantes !== 1 ? 's' : ''}, la reserva se cancelará automáticamente y se liberará el horario.
+                              </p>
+                            </div>
+                          );
+                        }
+                      }
+                      return null;
+                    })()
+                  )}
+
+                  {/* Contactos de WhatsApp para esta cancha */}
+                  {reserva.contactos && reserva.contactos.length > 0 && (
+                    <div className="mt-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+                      <p className="text-sm font-semibold text-gray-700 mb-2">
+                        💰 Puedes mandar el capture de tu Yape o Depósito a estos números:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {reserva.contactos.map((telefono, idx) => (
+                          <a
+                            key={idx}
+                            href={`https://wa.me/${telefono.replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
+                          >
+                            <span className="text-lg">💬</span>
+                            <span>{telefono}</span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
-                {reserva.estado !== 'cancelada' && reserva.estado !== 'completada' && (
-                  <div className="ml-4">
+                <div className="ml-4 flex flex-col gap-2">
+                  {reserva.estado !== 'cancelada' && reserva.estado !== 'completada' && (
                     <Button
                       variant="danger"
                       size="sm"
@@ -277,8 +421,8 @@ const Reservas = () => {
                     >
                       Cancelar
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </Card>
           ))}

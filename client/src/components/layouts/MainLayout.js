@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useConfig } from '../../context/ConfigContext';
 import swalConfig from '../../utils/swalConfig';
+import NotificacionesBadge from '../ui/NotificacionesBadge';
+import PushNotificationToggle from '../ui/PushNotificationToggle';
 
 const MainLayout = () => {
   const { user, logout } = useAuth();
@@ -31,8 +33,9 @@ const MainLayout = () => {
   };
 
   const menuItems = [
-    { path: '/app', label: 'Reservar', icon: '📅', exact: true },
+    { path: '/app', label: 'Horarios', icon: '📅', exact: true },
     { path: '/app/reservas', label: 'Mis Reservas', icon: '📋' },
+    { path: '/app/mensajes', label: 'Mensajes', icon: '📨' },
     { path: '/app/perfil', label: 'Perfil', icon: '👤' }
   ];
 
@@ -79,6 +82,12 @@ const MainLayout = () => {
                 </Link>
               ))}
               
+              {/* Badge de Notificaciones */}
+              <NotificacionesBadge usuarioId={user?.id} rol={user?.rol} />
+              
+              {/* Toggle Push Notifications */}
+              <PushNotificationToggle usuarioId={user?.id} variant="icon" />
+              
               {/* Botón Cerrar Sesión */}
               <button
                 onClick={handleLogout}
@@ -93,8 +102,8 @@ const MainLayout = () => {
         </div>
       </header>
 
-      {/* Contenido Principal - Sin padding para que el horario ocupe toda la pantalla */}
-      <main className="flex-1 overflow-auto">
+      {/* Contenido Principal con padding adecuado */}
+      <main className="flex-1 overflow-auto px-4 lg:px-8 py-6 lg:py-8">
         <Outlet />
       </main>
     </div>

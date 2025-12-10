@@ -62,3 +62,4 @@ Después de estos pasos, deberías ver:
 Los errores de "cdn.tailwindcss.com" probablemente vienen del caché del navegador. Una vez que limpies el caché y reinicies, deberían desaparecer.
 
 
+

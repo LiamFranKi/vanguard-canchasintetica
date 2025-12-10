@@ -79,3 +79,4 @@ Ya deshabilitamos el service worker en desarrollo. Solo funcionará en producci�
 Si el problema persiste, usa el navegador que funciona o limpia el caché del que tiene problemas.
 
 
+

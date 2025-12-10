@@ -327,12 +327,34 @@ const sendReminderEmail = async (email, nombre, reserva) => {
   return await sendEmail(email, asunto || `Recordatorio de Reserva - ${reserva.cancha_nombre}`, html);
 };
 
+const sendNewReservationNotificationToStaff = async (email, nombre, reserva, usuarioNombre) => {
+  const fechaFormateada = moment(reserva.fecha).format('DD/MM/YYYY');
+  
+  const html = `
+    <h2>Nueva Reserva 📅</h2>
+    <p>Hola ${nombre},</p>
+    <p>Se ha creado una nueva reserva en la cancha asignada:</p>
+    <div class="info-box">
+      <p><strong>Cancha:</strong> ${reserva.cancha_nombre}</p>
+      <p><strong>Cliente:</strong> ${usuarioNombre}</p>
+      <p><strong>Fecha:</strong> ${fechaFormateada}</p>
+      <p><strong>Horario:</strong> ${reserva.hora_inicio} - ${reserva.hora_fin}</p>
+      <p><strong>Costo:</strong> S/.${Number(reserva.costo_total || 0).toFixed(2)}</p>
+    </div>
+    <p><strong>Nota:</strong> Esta reserva está pendiente de pago. El cliente tiene un plazo determinado para realizar el pago.</p>
+  `;
+
+  const companyName = await getCompanyName();
+  return await sendEmail(email, `Nueva Reserva - ${reserva.cancha_nombre} - ${fechaFormateada}`, html);
+};
+
 module.exports = {
   sendEmail,
   sendWelcomeEmail,
   sendReservationEmail,
   sendReservationCancelledEmail,
   sendPaymentEmail,
-  sendReminderEmail
+  sendReminderEmail,
+  sendNewReservationNotificationToStaff
 };
 

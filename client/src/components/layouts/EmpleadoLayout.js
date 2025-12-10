@@ -3,6 +3,8 @@ import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useConfig } from '../../context/ConfigContext';
 import swalConfig from '../../utils/swalConfig';
+import NotificacionesBadge from '../ui/NotificacionesBadge';
+import PushNotificationToggle from '../ui/PushNotificationToggle';
 
 const EmpleadoLayout = () => {
   const { user, logout } = useAuth();
@@ -35,6 +37,7 @@ const EmpleadoLayout = () => {
     { path: '/empleado/reservas', label: 'Reservas', icon: '📋' },
     { path: '/empleado/usuarios', label: 'Usuarios', icon: '👥' },
     { path: '/empleado/reportes', label: 'Reportes', icon: '📈' },
+    { path: '/empleado/mensajes', label: 'Mensajes', icon: '📨' },
     { path: '/empleado/perfil', label: 'Perfil', icon: '👤' }
   ];
 
@@ -93,6 +96,21 @@ const EmpleadoLayout = () => {
                 <span className="font-medium">{item.label}</span>
               </Link>
             ))}
+            
+            {/* Badge de Notificaciones */}
+            <NotificacionesBadge 
+              usuarioId={user?.id} 
+              rol={user?.rol} 
+              variant="vertical"
+              onNavigate={() => setSidebarOpen(false)}
+            />
+            
+            {/* Toggle Push Notifications */}
+            <PushNotificationToggle 
+              usuarioId={user?.id} 
+              variant="button"
+              onToggle={() => setSidebarOpen(false)}
+            />
           </nav>
 
           <div className="p-4 border-t space-y-2">

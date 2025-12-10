@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.0] - 2025-01-XX
+
+### Agregado
+- **Números de contacto en cards de canchas (Rol Usuario)**: Las cards de canchas disponibles ahora muestran "N° de Contactos:" con los teléfonos de todos los empleados asignados a esa cancha, separados por "-"
+- **Botones de WhatsApp en reservas (Rol Usuario)**: Cada card de reserva individual ahora muestra botones de WhatsApp con los números de contacto específicos de la cancha de esa reserva, permitiendo enviar comprobantes de pago directamente
+- **Tabs de Reservas Nuevas y Pasadas (Rol Usuario)**: Se agregaron tabs para separar las reservas futuras (fecha >= hoy) de las reservas pasadas (fecha < hoy) en la página "Mis Reservas"
+- **Mensaje de pago por WhatsApp**: Cada reserva muestra un mensaje destacado: "Puedes mandar el capture de tu Yape o Depósito a estos números:" con botones de WhatsApp para contactar a los empleados asignados
+
+### Mejorado
+- **Endpoint de canchas**: Ahora incluye los contactos de empleados asignados cuando el usuario tiene rol "usuario"
+- **Endpoint de reservas**: Ahora incluye un array `contactos` con los teléfonos de empleados asignados a cada cancha cuando el usuario tiene rol "usuario"
+- **UX de pagos**: Los usuarios pueden contactar directamente por WhatsApp a los empleados responsables de cada cancha desde cada reserva individual
+
+### Corregido
+- **Landing page redirect**: Corregido el problema donde el landing page redirigía al login. Ahora el endpoint de canchas permite acceso público para mostrar canchas activas sin autenticación
+- **Interceptor de axios**: Actualizado para no redirigir al login si el usuario está en la landing page o en la página de login
+
 ## [1.1.0] - 2025-01-XX
 
 ### Cambiado

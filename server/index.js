@@ -12,6 +12,7 @@ const pagoRoutes = require('./routes/pagos');
 const configRoutes = require('./routes/config');
 const empleadoRoutes = require('./routes/empleados');
 const notificacionRoutes = require('./routes/notificaciones');
+const mensajeRoutes = require('./routes/mensajes');
 const { iniciarTareasProgramadas } = require('./services/scheduledTasks');
 
 const app = express();
@@ -44,6 +45,7 @@ app.use('/api/pagos', pagoRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/empleados', empleadoRoutes);
 app.use('/api/notificaciones', notificacionRoutes);
+app.use('/api/mensajes', mensajeRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

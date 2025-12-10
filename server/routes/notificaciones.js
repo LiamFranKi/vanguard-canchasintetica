@@ -92,6 +92,32 @@ router.post('/subscribe', authenticate, async (req, res) => {
   }
 });
 
+// Desuscribirse de push notifications
+router.delete('/unsubscribe', authenticate, async (req, res) => {
+  try {
+    const { endpoint } = req.body;
+
+    if (endpoint) {
+      // Eliminar suscripción específica
+      await query(
+        'DELETE FROM push_subscriptions WHERE usuario_id = $1 AND endpoint = $2',
+        [req.user.id, endpoint]
+      );
+    } else {
+      // Eliminar todas las suscripciones del usuario
+      await query(
+        'DELETE FROM push_subscriptions WHERE usuario_id = $1',
+        [req.user.id]
+      );
+    }
+
+    res.json({ message: 'Suscripción eliminada correctamente' });
+  } catch (error) {
+    console.error('Error eliminando suscripción:', error);
+    res.status(500).json({ message: 'Error en el servidor' });
+  }
+});
+
 module.exports = router;
 
 

@@ -130,6 +130,7 @@ const EmpleadoReportes = () => {
     const ingresosPorCancha = {};
     const ingresosPorMetodo = {};
     const ingresosPorDia = {};
+    const ingresosPorTurno = { dia: 0, noche: 0 };
 
     pagos.forEach(pago => {
       const monto = parseFloat(pago.monto || 0);
@@ -142,6 +143,19 @@ const EmpleadoReportes = () => {
 
         const fechaPago = moment(pago.fecha_pago).format('YYYY-MM-DD');
         ingresosPorDia[fechaPago] = (ingresosPorDia[fechaPago] || 0) + monto;
+
+        // Determinar turno (día/noche) según la hora de inicio de la reserva
+        if (reserva.hora_inicio) {
+          const horaLimite = reserva.hora_limite_turno ? moment(reserva.hora_limite_turno, 'HH:mm:ss') : moment('18:00', 'HH:mm');
+          const horaInicio = moment(reserva.hora_inicio, 'HH:mm:ss');
+          const esTurnoNoche = horaInicio.isSameOrAfter(horaLimite);
+          
+          if (esTurnoNoche) {
+            ingresosPorTurno.noche += monto;
+          } else {
+            ingresosPorTurno.dia += monto;
+          }
+        }
       }
 
       const metodo = pago.metodo_pago || 'Sin método';
@@ -160,6 +174,10 @@ const EmpleadoReportes = () => {
       porDia: Object.entries(ingresosPorDia)
         .map(([fecha, total]) => ({ fecha, total }))
         .sort((a, b) => a.fecha.localeCompare(b.fecha)),
+      porTurno: [
+        { nombre: 'Día', total: ingresosPorTurno.dia },
+        { nombre: 'Noche', total: ingresosPorTurno.noche }
+      ],
       cantidadPagos: pagos.length
     };
   };
@@ -1062,20 +1080,56 @@ const EmpleadoReportes = () => {
                 </div>
               </div>
 
-              <div className="mb-6" id="chart-ingresos-dia">
-                <h3 className="text-lg font-semibold mb-3">Ingresos por Día</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={datosReporte.porDia}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="fecha" tickFormatter={(value) => moment(value).format('DD/MM')} />
-                    <YAxis />
-                    <Tooltip 
-                      labelFormatter={(value) => moment(value).format('DD/MM/YYYY')}
-                      formatter={(value) => formatearMoneda(value)} 
-                    />
-                    <Line type="monotone" dataKey="total" stroke="#22c55e" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div id="chart-ingresos-dia">
+                  <h3 className="text-lg font-semibold mb-3">Ingresos por Día</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={datosReporte.porDia}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="fecha" tickFormatter={(value) => moment(value).format('DD/MM')} />
+                      <YAxis />
+                      <Tooltip 
+                        labelFormatter={(value) => moment(value).format('DD/MM/YYYY')}
+                        formatter={(value) => formatearMoneda(value)} 
+                      />
+                      <Line type="monotone" dataKey="total" stroke="#22c55e" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div id="chart-ingresos-turno">
+                  <h3 className="text-lg font-semibold mb-3">Ingresos por Turno</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={datosReporte.porTurno}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ nombre, percent }) => `${nombre}: ${(percent * 100).toFixed(1)}%`}
+                        outerRadius={100}
+                        fill="#8884d8"
+                        dataKey="total"
+                      >
+                        {datosReporte.porTurno.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={index === 0 ? '#fbbf24' : '#1e40af'} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => formatearMoneda(value)} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="mt-4 grid grid-cols-2 gap-4 text-center">
+                    <div className="bg-yellow-50 p-3 rounded-lg">
+                      <p className="text-sm text-gray-600">Turno Día</p>
+                      <p className="text-xl font-bold text-yellow-600">{formatearMoneda(datosReporte.porTurno[0]?.total || 0)}</p>
+                    </div>
+                    <div className="bg-blue-50 p-3 rounded-lg">
+                      <p className="text-sm text-gray-600">Turno Noche</p>
+                      <p className="text-xl font-bold text-blue-600">{formatearMoneda(datosReporte.porTurno[1]?.total || 0)}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </Card>
           )}

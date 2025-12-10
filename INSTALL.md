@@ -142,3 +142,4 @@ npm run build            # Build del frontend
 4. Revisar `docs/DEPLOYMENT.md` para producción
 
 
+

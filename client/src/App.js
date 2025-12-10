@@ -13,6 +13,8 @@ import Reservas from './pages/Reservas';
 import Horarios from './pages/Horarios';
 import Pagos from './pages/Pagos';
 import Perfil from './pages/Perfil';
+import Mensajes from './pages/Mensajes';
+import Notificaciones from './pages/Notificaciones';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -23,6 +25,7 @@ import AdminReservas from './pages/admin/AdminReservas';
 import AdminPagos from './pages/admin/AdminPagos';
 import AdminConfig from './pages/admin/AdminConfig';
 import AdminReportes from './pages/admin/AdminReportes';
+import AdminMensajes from './pages/admin/AdminMensajes';
 
 // Layouts
 import MainLayout from './components/layouts/MainLayout';
@@ -35,6 +38,7 @@ import EmpleadoReservas from './pages/empleado/EmpleadoReservas';
 import EmpleadoHorarios from './pages/empleado/EmpleadoHorarios';
 import EmpleadoUsuarios from './pages/empleado/EmpleadoUsuarios';
 import EmpleadoReportes from './pages/empleado/EmpleadoReportes';
+import EmpleadoMensajes from './pages/empleado/EmpleadoMensajes';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
@@ -86,11 +90,13 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Dashboard />} />
+        <Route index element={<Horarios />} />
         <Route path="canchas" element={<Canchas />} />
         <Route path="reservas" element={<Reservas />} />
         <Route path="horarios" element={<Horarios />} />
         <Route path="pagos" element={<Pagos />} />
+        <Route path="mensajes" element={<Mensajes />} />
+        <Route path="notificaciones" element={<Notificaciones />} />
         <Route path="perfil" element={<Perfil />} />
       </Route>
 
@@ -109,6 +115,8 @@ function AppRoutes() {
         <Route path="reservas" element={<AdminReservas />} />
         <Route path="pagos" element={<AdminPagos />} />
         <Route path="reportes" element={<AdminReportes />} />
+        <Route path="mensajes" element={<AdminMensajes />} />
+        <Route path="notificaciones" element={<Notificaciones />} />
         <Route path="config" element={<AdminConfig />} />
       </Route>
 
@@ -125,6 +133,8 @@ function AppRoutes() {
         <Route path="horarios" element={<EmpleadoHorarios />} />
         <Route path="usuarios" element={<EmpleadoUsuarios />} />
         <Route path="reportes" element={<EmpleadoReportes />} />
+        <Route path="mensajes" element={<EmpleadoMensajes />} />
+        <Route path="notificaciones" element={<Notificaciones />} />
         <Route path="perfil" element={<Perfil />} />
       </Route>
 

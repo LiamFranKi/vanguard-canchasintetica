@@ -38,33 +38,88 @@ const upload = multer({
 });
 
 // Obtener todas las canchas
-// - Admin: ve todas
-// - Empleado: solo canchas asignadas en cancha_personal
-// - Usuario: todas las activas/inactivas según filtro (por ahora sin restricción)
-router.get('/', authenticate, async (req, res) => {
+// - Público (sin autenticación): solo canchas activas (para landing page)
+// - Autenticado: según rol
+//   - Admin: ve todas
+//   - Empleado: solo canchas asignadas en cancha_personal
+//   - Usuario: todas las activas/inactivas según filtro
+router.get('/', async (req, res) => {
   try {
     const { activa } = req.query;
     let sql = 'SELECT c.* FROM canchas c WHERE 1=1';
     const params = [];
     let paramCount = 1;
 
+    // Verificar si hay token válido
+    const token = req.headers.authorization?.split(' ')[1];
+    let user = null;
+
+    if (token) {
+      try {
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const userResult = await query(
+          'SELECT id, rol, activo FROM usuarios WHERE id = $1',
+          [decoded.userId]
+        );
+        
+        if (userResult.rows.length > 0 && userResult.rows[0].activo) {
+          user = userResult.rows[0];
+        }
+      } catch (jwtError) {
+        // Token inválido, tratar como no autenticado
+      }
+    }
+
+    // Si no está autenticado, solo mostrar canchas activas (para landing page)
+    if (!user) {
+      sql += ` AND c.activa = $${paramCount++}`;
+      params.push(true);
+      sql += ' ORDER BY nombre';
+      const result = await query(sql, params);
+      return res.json(result.rows);
+    }
+
+    // Usuario autenticado: aplicar filtros según rol
     if (activa !== undefined) {
       sql += ` AND c.activa = $${paramCount++}`;
       params.push(activa === 'true');
     }
 
     // Empleado: solo canchas asignadas
-    if (req.user && req.user.rol === 'empleado') {
+    if (user.rol === 'empleado') {
       sql += ` AND EXISTS (
         SELECT 1 FROM cancha_personal cp
         WHERE cp.cancha_id = c.id AND cp.usuario_id = $${paramCount++}
       )`;
-      params.push(req.user.id);
+      params.push(user.id);
     }
 
     sql += ' ORDER BY nombre';
 
     const result = await query(sql, params);
+    
+    // Para usuarios regulares, agregar contactos de empleados asignados
+    if (user && user.rol === 'usuario') {
+      const canchasConContactos = await Promise.all(
+        result.rows.map(async (cancha) => {
+          const contactosResult = await query(
+            `SELECT u.telefono 
+             FROM cancha_personal cp
+             JOIN usuarios u ON cp.usuario_id = u.id
+             WHERE cp.cancha_id = $1 AND u.telefono IS NOT NULL AND u.telefono != ''
+             ORDER BY u.nombre, u.apellido`,
+            [cancha.id]
+          );
+          
+          const telefonos = contactosResult.rows.map(r => r.telefono).filter(t => t);
+          cancha.contactos = telefonos.join(' - ');
+          return cancha;
+        })
+      );
+      return res.json(canchasConContactos);
+    }
+    
     res.json(result.rows);
   } catch (error) {
     console.error('Error obteniendo canchas:', error);
@@ -108,14 +163,43 @@ router.post('/', authenticate, authorize('admin'), upload.single('imagen'), [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { nombre, descripcion, capacidad } = req.body;
+    const { 
+      nombre, 
+      descripcion, 
+      capacidad, 
+      hora_inicio_atencion, 
+      hora_fin_atencion,
+      precio_30min_dia,
+      precio_1hora_dia,
+      precio_30min_noche,
+      precio_1hora_noche,
+      hora_limite_turno
+    } = req.body;
     const imagen = req.file ? `/uploads/canchas/${req.file.filename}` : null;
 
     const result = await query(
-      `INSERT INTO canchas (nombre, descripcion, capacidad, imagen)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO canchas (
+        nombre, descripcion, capacidad, imagen, 
+        hora_inicio_atencion, hora_fin_atencion,
+        precio_30min_dia, precio_1hora_dia,
+        precio_30min_noche, precio_1hora_noche,
+        hora_limite_turno
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
-      [nombre, descripcion || null, capacidad || 10, imagen]
+      [
+        nombre, 
+        descripcion || null, 
+        capacidad || 10, 
+        imagen,
+        hora_inicio_atencion || '08:00',
+        hora_fin_atencion || '23:00',
+        precio_30min_dia || 25.00,
+        precio_1hora_dia || 50.00,
+        precio_30min_noche || 35.00,
+        precio_1hora_noche || 70.00,
+        hora_limite_turno || '18:00'
+      ]
     );
 
     res.status(201).json(result.rows[0]);
@@ -129,7 +213,21 @@ router.post('/', authenticate, authorize('admin'), upload.single('imagen'), [
 router.put('/:id', authenticate, authorize('admin'), upload.single('imagen'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, descripcion, capacidad, activa, hora_inicio_atencion, hora_fin_atencion, precio_30min, precio_1hora } = req.body;
+    const { 
+      nombre, 
+      descripcion, 
+      capacidad, 
+      activa, 
+      hora_inicio_atencion, 
+      hora_fin_atencion, 
+      precio_30min, 
+      precio_1hora,
+      precio_30min_dia,
+      precio_1hora_dia,
+      precio_30min_noche,
+      precio_1hora_noche,
+      hora_limite_turno
+    } = req.body;
 
     const updates = [];
     const params = [];
@@ -159,6 +257,7 @@ router.put('/:id', authenticate, authorize('admin'), upload.single('imagen'), as
       updates.push(`hora_fin_atencion = $${paramCount++}`);
       params.push(hora_fin_atencion);
     }
+    // Mantener compatibilidad con campos antiguos
     if (precio_30min !== undefined) {
       updates.push(`precio_30min = $${paramCount++}`);
       params.push(precio_30min);
@@ -166,6 +265,27 @@ router.put('/:id', authenticate, authorize('admin'), upload.single('imagen'), as
     if (precio_1hora !== undefined) {
       updates.push(`precio_1hora = $${paramCount++}`);
       params.push(precio_1hora);
+    }
+    // Nuevos campos de precios por turno
+    if (precio_30min_dia !== undefined) {
+      updates.push(`precio_30min_dia = $${paramCount++}`);
+      params.push(precio_30min_dia);
+    }
+    if (precio_1hora_dia !== undefined) {
+      updates.push(`precio_1hora_dia = $${paramCount++}`);
+      params.push(precio_1hora_dia);
+    }
+    if (precio_30min_noche !== undefined) {
+      updates.push(`precio_30min_noche = $${paramCount++}`);
+      params.push(precio_30min_noche);
+    }
+    if (precio_1hora_noche !== undefined) {
+      updates.push(`precio_1hora_noche = $${paramCount++}`);
+      params.push(precio_1hora_noche);
+    }
+    if (hora_limite_turno) {
+      updates.push(`hora_limite_turno = $${paramCount++}`);
+      params.push(hora_limite_turno);
     }
     if (req.file) {
       updates.push(`imagen = $${paramCount++}`);

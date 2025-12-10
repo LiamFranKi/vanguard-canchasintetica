@@ -39,6 +39,7 @@ const AdminLayout = () => {
     { path: '/admin/reservas', label: 'Reservas', icon: '📋', roles: ['admin', 'empleado'] },
     { path: '/admin/usuarios', label: 'Usuarios', icon: '👥', roles: ['admin', 'empleado'] },
     { path: '/admin/reportes', label: 'Reportes', icon: '📈', roles: ['admin', 'empleado'] },
+    { path: '/admin/mensajes', label: 'Mensajes', icon: '📨', roles: ['admin'] },
     // { path: '/admin/pagos', label: 'Pagos', icon: '💳', roles: ['admin', 'empleado'] }, // Oculto: integrado en Reservas
     { path: '/admin/config', label: 'Configuración', icon: '⚙️', roles: ['admin'] }
   ].filter(item => item.roles.includes(user?.rol));
