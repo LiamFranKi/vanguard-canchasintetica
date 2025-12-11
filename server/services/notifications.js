@@ -67,23 +67,33 @@ const sendPushNotification = async (usuario_id, notification) => {
     });
 
     // Enviar a todas las suscripciones
-    const promises = subscriptions.rows.map(sub => {
-      return webpush.sendNotification(
-        {
-          endpoint: sub.endpoint,
-          keys: {
-            p256dh: sub.p256dh,
-            auth: sub.auth
-          }
-        },
-        payload
-      ).catch(err => {
+    const promises = subscriptions.rows.map(async (sub) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: {
+              p256dh: sub.p256dh,
+              auth: sub.auth
+            }
+          },
+          payload
+        );
+      } catch (err) {
         console.error('Error enviando push notification:', err);
-        // Si la suscripción es inválida, eliminarla
+        // Si la suscripción es inválida (410 = Gone), eliminarla
         if (err.statusCode === 410) {
-          query('DELETE FROM push_subscriptions WHERE id = $1', [sub.id]);
+          console.log(`Eliminando suscripción expirada ID: ${sub.id} para usuario: ${usuario_id}`);
+          try {
+            await query('DELETE FROM push_subscriptions WHERE id = $1', [sub.id]);
+            console.log(`Suscripción ${sub.id} eliminada correctamente`);
+          } catch (deleteError) {
+            console.error('Error eliminando suscripción expirada:', deleteError);
+          }
         }
-      });
+        // Re-lanzar el error para que Promise.allSettled lo capture
+        throw err;
+      }
     });
 
     await Promise.allSettled(promises);

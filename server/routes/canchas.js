@@ -1,5 +1,5 @@
 const express = require('express');
-const { query } = require('../database/connection');
+const { query, transaction } = require('../database/connection');
 const { authenticate, authorize } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const multer = require('multer');
@@ -439,31 +439,29 @@ router.put('/:id/personal', authenticate, authorize('admin'), async (req, res) =
       return res.status(400).json({ message: 'La lista de empleados debe ser un arreglo' });
     }
 
-    // Transacción simple: borrar asignaciones actuales y volver a insertarlas
-    await query('BEGIN');
-    await query('DELETE FROM cancha_personal WHERE cancha_id = $1', [id]);
+    // Transacción: borrar asignaciones actuales y volver a insertarlas
+    await transaction(async (client) => {
+      await client.query('DELETE FROM cancha_personal WHERE cancha_id = $1', [id]);
 
-    if (empleados.length > 0) {
-      const values = [];
-      const params = [id];
-      let paramIndex = 2;
+      if (empleados.length > 0) {
+        const values = [];
+        const params = [id];
+        let paramIndex = 2;
 
-      empleados.forEach((empId) => {
-        values.push(`($1, $${paramIndex++})`);
-        params.push(empId);
-      });
+        empleados.forEach((empId) => {
+          values.push(`($1, $${paramIndex++})`);
+          params.push(empId);
+        });
 
-      const sql = `INSERT INTO cancha_personal (cancha_id, usuario_id) VALUES ${values.join(',')}`;
-      await query(sql, params);
-    }
-
-    await query('COMMIT');
+        const sql = `INSERT INTO cancha_personal (cancha_id, usuario_id) VALUES ${values.join(',')}`;
+        await client.query(sql, params);
+      }
+    });
 
     res.json({ message: 'Personal de cancha actualizado correctamente' });
   } catch (error) {
-    await query('ROLLBACK').catch(() => {});
     console.error('Error actualizando personal de cancha:', error);
-    res.status(500).json({ message: 'Error en el servidor' });
+    res.status(500).json({ message: 'Error en el servidor', error: error.message });
   }
 });
 

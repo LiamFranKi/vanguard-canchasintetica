@@ -64,32 +64,33 @@ const AdminConfig = () => {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-gray-800 mb-6">Configuración del Sistema</h1>
+      <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 mb-4 sm:mb-6">Configuración del Sistema</h1>
 
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Logo */}
         <Card title="Logo de la Empresa" subtitle="Sube el logo que aparecerá en el sitio">
           {configs.logo && (
             <div className="mb-6 p-4 bg-gray-50 rounded-xl border-2 border-gray-200">
               <img
-                src={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${configs.logo}`}
+                src={`${window.location.origin}${configs.logo}`}
                 alt="Logo"
                 className="h-32 w-auto mx-auto"
               />
             </div>
           )}
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <input
               type="file"
               accept="image/*"
               onChange={(e) => setLogoFile(e.target.files[0])}
-              className="flex-1 px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:border-green-500 focus:ring-4 focus:ring-green-100 transition-all"
+              className="flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-3 bg-white border-2 border-gray-200 rounded-xl focus:border-green-500 focus:ring-4 focus:ring-green-100 transition-all text-sm sm:text-base"
             />
             <Button
               variant="primary"
               onClick={handleLogoUpload}
               disabled={!logoFile}
               icon="📤"
+              className="w-full sm:w-auto flex-shrink-0 text-sm sm:text-base"
             >
               Subir Logo
             </Button>
@@ -98,7 +99,7 @@ const AdminConfig = () => {
 
         {/* Información General */}
         <Card title="Información General" subtitle="Configura los datos básicos del sitio">
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6 max-w-full overflow-hidden">
             <FormInput
               label="Nombre de la Empresa"
               type="text"
@@ -182,7 +183,7 @@ const AdminConfig = () => {
 
         {/* Configuración de Correos */}
         <Card title="Configuración de Correos" subtitle="Personaliza los correos que se enviarán">
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6 max-w-full overflow-hidden">
             <FormInput
               label="Asunto Correo Bienvenida"
               type="text"

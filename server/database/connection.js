@@ -1,5 +1,7 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+const path = require('path');
+// Cargar variables de entorno desde el directorio del servidor
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -10,6 +12,8 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
+  // Configurar zona horaria para PostgreSQL
+  options: `-c timezone=${process.env.TIMEZONE || 'America/Lima'}`
 });
 
 pool.on('error', (err) => {

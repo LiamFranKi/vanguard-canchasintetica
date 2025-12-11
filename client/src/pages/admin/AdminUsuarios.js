@@ -138,16 +138,17 @@ const AdminUsuarios = () => {
 
   return (
     <div>
-      <div className="mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-1">Gestión de Usuarios</h1>
-            <p className="text-gray-600">Administra los usuarios del sistema</p>
+      <div className="mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 mb-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 mb-1">Gestión de Usuarios</h1>
+            <p className="text-sm sm:text-base text-gray-600">Administra los usuarios del sistema</p>
           </div>
           <Button
             variant={mostrarFormulario ? 'secondary' : 'primary'}
             onClick={() => setMostrarFormulario(!mostrarFormulario)}
             icon={mostrarFormulario ? '✕' : '➕'}
+            className="w-full sm:w-auto text-sm sm:text-base"
           >
             {mostrarFormulario ? 'Cancelar' : 'Nuevo Usuario'}
           </Button>
@@ -287,16 +288,16 @@ const AdminUsuarios = () => {
         </div>
       ) : (
         <Card>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto -mx-2 sm:mx-0">
             <table className="min-w-full">
               <thead>
                 <tr className="bg-gradient-to-r from-green-600 to-green-700 text-white">
-                  <th className="px-6 py-4 text-center font-semibold">DNI</th>
-                  <th className="px-6 py-4 text-center font-semibold">Nombre</th>
-                  <th className="px-6 py-4 text-center font-semibold">Email</th>
-                  <th className="px-6 py-4 text-center font-semibold">Teléfono</th>
-                  <th className="px-6 py-4 text-center font-semibold">Rol</th>
-                  <th className="px-6 py-4 text-center font-semibold">Acciones</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">DNI</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Nombre</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base hidden sm:table-cell">Email</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base hidden md:table-cell">Teléfono</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Rol</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -309,12 +310,12 @@ const AdminUsuarios = () => {
                 ) : (
                   usuariosFiltrados.map((usuario) => (
                     <tr key={usuario.id} className="border-b hover:bg-gray-50 transition">
-                      <td className="px-6 py-4 text-center font-medium">{usuario.dni}</td>
-                      <td className="px-6 py-4 text-center">{usuario.nombre} {usuario.apellido}</td>
-                      <td className="px-6 py-4 text-center text-gray-600">{usuario.email || '-'}</td>
-                      <td className="px-6 py-4 text-center text-gray-600">{usuario.telefono || '-'}</td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`inline-block px-4 py-2 rounded-full text-xs font-semibold shadow-md capitalize ${
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-medium text-xs sm:text-sm">{usuario.dni}</td>
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center text-xs sm:text-sm">{usuario.nombre} {usuario.apellido}</td>
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center text-gray-600 text-xs sm:text-sm hidden sm:table-cell">{usuario.email || '-'}</td>
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center text-gray-600 text-xs sm:text-sm hidden md:table-cell">{usuario.telefono || '-'}</td>
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center">
+                        <span className={`inline-block px-2 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 rounded-full text-xs font-semibold shadow-md capitalize ${
                           usuario.rol === 'admin'
                             ? 'bg-purple-100 text-purple-800 border border-purple-200'
                             : usuario.rol === 'empleado'
@@ -324,25 +325,27 @@ const AdminUsuarios = () => {
                           {usuario.rol === 'admin' ? '👑 Admin' : usuario.rol === 'empleado' ? '👔 Empleado' : '👤 Usuario'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex justify-center gap-2">
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center">
+                        <div className="flex justify-center gap-1 sm:gap-2 flex-wrap">
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleEditar(usuario)}
                             icon="✏️"
-                            className="px-3"
+                            className="px-2 sm:px-3 text-xs sm:text-sm"
                           >
-                            Editar
+                            <span className="hidden sm:inline">Editar</span>
+                            <span className="sm:hidden">✏️</span>
                           </Button>
                           <Button
                             variant="danger"
                             size="sm"
                             onClick={() => handleEliminar(usuario.id, `${usuario.nombre} ${usuario.apellido}`)}
                             icon="🗑️"
-                            className="px-3"
+                            className="px-2 sm:px-3 text-xs sm:text-sm"
                           >
-                            Eliminar
+                            <span className="hidden sm:inline">Eliminar</span>
+                            <span className="sm:hidden">🗑️</span>
                           </Button>
                         </div>
                       </td>

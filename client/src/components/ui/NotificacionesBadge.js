@@ -85,7 +85,15 @@ const NotificacionesBadge = ({ usuarioId, rol, variant = 'horizontal', onNavigat
       return;
     }
     
-    // Para otros roles, mostrar el dropdown
+    // En móvil (pantallas pequeñas), redirigir directamente a la página sin mostrar dropdown
+    const isMobile = window.innerWidth < 1024; // lg breakpoint de Tailwind
+    if (isMobile) {
+      navigate(getRutaNotificaciones());
+      if (onNavigate) onNavigate();
+      return;
+    }
+    
+    // Para desktop, mostrar el dropdown
     setMostrarDropdown(!mostrarDropdown);
   };
 

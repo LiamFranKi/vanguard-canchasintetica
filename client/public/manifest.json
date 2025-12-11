@@ -17,6 +17,7 @@
   "display": "standalone",
   "theme_color": "#22c55e",
   "background_color": "#ffffff",
-  "orientation": "portrait-primary"
+  "orientation": "any",
+  "viewport": "width=device-width, initial-scale=1, maximum-scale=5"
 }
 

@@ -19,7 +19,7 @@ const cancelarReservasVencidas = async () => {
     const diasMax = parseInt(config.rows[0]?.valor || 3);
 
     // Buscar reservas pendientes que no tienen pago confirmado y han pasado los días máximos
-    const fechaLimite = moment().subtract(diasMax, 'days').format('YYYY-MM-DD');
+    const fechaLimite = moment().local().subtract(diasMax, 'days').format('YYYY-MM-DD');
     
     const reservasVencidas = await query(
       `SELECT r.id, r.usuario_id, r.cancha_id, r.fecha, r.hora_inicio, 
@@ -67,7 +67,7 @@ const enviarRecordatoriosReservaHoy = async () => {
   try {
     console.log('🔔 Ejecutando tarea: Enviar recordatorios de reservas de hoy...');
 
-    const hoy = moment().format('YYYY-MM-DD');
+    const hoy = moment().local().format('YYYY-MM-DD');
 
     const reservasHoy = await query(
       `SELECT r.*, 

@@ -324,7 +324,7 @@ const AdminPagos = () => {
                       <div className="flex gap-2 items-center">
                         {pago.comprobante && (
                           <a
-                            href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${pago.comprobante}`}
+                            href={`${window.location.origin}${pago.comprobante}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-700 text-sm font-medium"

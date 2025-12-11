@@ -165,6 +165,26 @@ const swalConfig = {
         title: 'font-semibold'
       }
     });
+  },
+
+  // Toast de información
+  toastInfo: (title, text = '') => {
+    return Swal.fire({
+      icon: 'info',
+      title,
+      text,
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: 3000,
+      timerProgressBar: true,
+      background: '#3b82f6',
+      color: '#ffffff',
+      customClass: {
+        popup: 'rounded-xl shadow-2xl',
+        title: 'font-semibold'
+      }
+    });
   }
 };
 

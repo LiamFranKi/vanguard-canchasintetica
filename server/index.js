@@ -1,7 +1,11 @@
+// Configurar zona horaria ANTES de cualquier otra importación
+process.env.TZ = process.env.TIMEZONE || 'America/Lima';
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+// Cargar variables de entorno desde el directorio del servidor
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const db = require('./database/connection');
 const authRoutes = require('./routes/auth');

@@ -207,6 +207,8 @@ const sendWelcomeEmail = async (email, nombre, dni) => {
 };
 
 const sendReservationEmail = async (email, nombre, reserva) => {
+  console.log('📧 sendReservationEmail llamado con:', { email, nombre, reserva });
+  
   const { asunto, cuerpo } = await getEmailTemplate('reserva', {
     nombre,
     cancha: reserva.cancha_nombre,
@@ -246,7 +248,9 @@ const sendReservationEmail = async (email, nombre, reserva) => {
     de lo contrario se cancelará automáticamente y el horario volverá a estar disponible.</p>
   `;
 
-  return await sendEmail(email, asunto || `Reserva Confirmada - ${reserva.cancha_nombre}`, html);
+  const resultado = await sendEmail(email, asunto || `Reserva Confirmada - ${reserva.cancha_nombre}`, html);
+  console.log('📧 Resultado de sendReservationEmail:', resultado ? '✅ Enviado' : '❌ No enviado');
+  return resultado;
 };
 
 const sendReservationCancelledEmail = async (email, nombre, reserva) => {

@@ -137,11 +137,16 @@ const EmpleadoHorarios = () => {
   };
 
   const loadCanchaData = async () => {
+    if (!canchaSeleccionada) return;
+    
     try {
       const response = await api.get(`/canchas/${canchaSeleccionada}`);
+      console.log('Datos de cancha cargados:', response.data);
       setCanchaData(response.data);
     } catch (error) {
       console.error('Error cargando datos de cancha:', error);
+      swalConfig.toastError('Error', 'Error al cargar los datos de la cancha');
+      setCanchaData(null);
     }
   };
 
@@ -228,11 +233,23 @@ const EmpleadoHorarios = () => {
   };
 
   const generarSlots = (fecha) => {
-    if (!canchaData) return [];
+    if (!canchaData) {
+      console.warn('No hay datos de cancha para generar slots');
+      return [];
+    }
     
     const slots = [];
     const horaInicio = moment(canchaData.hora_inicio_atencion || '08:00', 'HH:mm');
     const horaFin = moment(canchaData.hora_fin_atencion || '23:00', 'HH:mm');
+    
+    // Validar que las horas sean válidas
+    if (!horaInicio.isValid() || !horaFin.isValid()) {
+      console.error('Horas de atención inválidas:', {
+        hora_inicio_atencion: canchaData.hora_inicio_atencion,
+        hora_fin_atencion: canchaData.hora_fin_atencion
+      });
+      return [];
+    }
     
     let current = horaInicio.clone();
     while (current.isBefore(horaFin)) {
@@ -261,6 +278,7 @@ const EmpleadoHorarios = () => {
       current.add(30, 'minutes');
     }
     
+    console.log(`Slots generados para ${fecha.format('YYYY-MM-DD')}:`, slots.length);
     return slots;
   };
 
@@ -327,6 +345,23 @@ const EmpleadoHorarios = () => {
   const calcularHoraFin = (horaInicio, duracion) => {
     const inicio = moment(horaInicio, 'HH:mm');
     return inicio.clone().add(parseInt(duracion), 'minutes').format('HH:mm');
+  };
+
+  // Verificar si un slot está dentro del rango seleccionado
+  const estaEnRangoSeleccionado = (slotInicio, slotFin) => {
+    if (!slotSeleccionado || !formReserva.hora_inicio || !formReserva.duracion) return false;
+    
+    const horaInicioSeleccionada = moment(formReserva.hora_inicio, 'HH:mm');
+    const horaFinSeleccionada = moment(calcularHoraFin(formReserva.hora_inicio, formReserva.duracion), 'HH:mm');
+    const slotInicioMoment = moment(slotInicio, 'HH:mm');
+    const slotFinMoment = moment(slotFin, 'HH:mm');
+    
+    // Verificar si el slot se solapa con el rango seleccionado
+    return (
+      (slotInicioMoment.isSameOrAfter(horaInicioSeleccionada) && slotInicioMoment.isBefore(horaFinSeleccionada)) ||
+      (slotFinMoment.isAfter(horaInicioSeleccionada) && slotFinMoment.isSameOrBefore(horaFinSeleccionada)) ||
+      (slotInicioMoment.isSameOrBefore(horaInicioSeleccionada) && slotFinMoment.isSameOrAfter(horaFinSeleccionada))
+    );
   };
 
   const calcularDuracion = () => {
@@ -408,16 +443,37 @@ const EmpleadoHorarios = () => {
     try {
       if (reservaSeleccionada) {
         // Editar reserva existente
+        // Si el precio manual está habilitado, enviarlo explícitamente
+        const costoTotalEnviar = formReserva.precio_manual_enabled && formReserva.precio_manual 
+          ? parseFloat(formReserva.precio_manual) 
+          : precioFinal;
+        
+        console.log('📝 Editando reserva:', {
+          precio_manual_enabled: formReserva.precio_manual_enabled,
+          precio_manual: formReserva.precio_manual,
+          precioFinal,
+          costoTotalEnviar
+        });
+        
         await api.put(`/reservas/${reservaSeleccionada.id}`, {
           hora_inicio: formReserva.hora_inicio,
           hora_fin: horaFinCalculada,
           notas: formReserva.notas,
-          costo_total: precioFinal
+          costo_total: costoTotalEnviar
         });
         swalConfig.toastSuccess('¡Reserva Actualizada!', `Reserva actualizada exitosamente. Nuevo costo: S/.${precioFinal.toFixed(2)}`);
         setMostrarModalEditar(false);
       } else {
         // Crear nueva reserva
+        // Siempre usar la hora_fin calculada basada en la duración seleccionada
+        console.log('📝 Creando nueva reserva:', {
+          cancha_id: canchaSeleccionada,
+          fecha: formReserva.fecha,
+          hora_inicio: formReserva.hora_inicio,
+          horaFinCalculada,
+          duracion: formReserva.duracion
+        });
+        
         await api.post('/reservas', {
           cancha_id: canchaSeleccionada,
           usuario_id: usuarioFinal.id,
@@ -564,7 +620,11 @@ const EmpleadoHorarios = () => {
         <div className="text-center py-12">
           <div className="text-gray-500">Cargando horarios...</div>
         </div>
-      ) : canchaData ? (
+      ) : !canchaData ? (
+        <div className="text-center py-12">
+          <div className="text-gray-500">Cargando datos de la cancha...</div>
+        </div>
+      ) : (
         <div className="space-y-6">
           {diasSemana.map((dia, index) => {
             const fecha = semanaActual.clone().add(index, 'days');
@@ -590,10 +650,26 @@ const EmpleadoHorarios = () => {
                   }`}
                 >
                   <div className="p-4">
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-                      {slots.map((slot, slotIndex) => {
+                    {slots.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p className="text-lg font-semibold">No hay horarios disponibles</p>
+                        <p className="text-sm mt-2">Verifica que la cancha tenga horarios de atención configurados</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                        {slots.map((slot, slotIndex) => {
                       const ocupado = estaOcupado(fecha, slot.inicio, slot.fin);
-                      const pasado = fecha.isBefore(moment(), 'day');
+                      const pasado = fecha.isBefore(moment().local(), 'day');
+                      const reservaOcupada = ocupado ? obtenerReservaOcupada(fecha, slot.inicio, slot.fin) : null;
+                      const enRangoSeleccionado = !ocupado && !pasado && slotSeleccionado && 
+                        slotSeleccionado.fecha && 
+                        moment(slotSeleccionado.fecha).format('YYYY-MM-DD') === fecha.format('YYYY-MM-DD') &&
+                        estaEnRangoSeleccionado(slot.inicio, slot.fin);
+                      
+                      // Mostrar precio real de la reserva si está ocupado, sino precio del sistema
+                      const precioAMostrar = reservaOcupada && reservaOcupada.costo_total 
+                        ? parseFloat(reservaOcupada.costo_total).toFixed(2)
+                        : slot.precio30min.toFixed(2);
                       
                       return (
                         <button
@@ -609,42 +685,40 @@ const EmpleadoHorarios = () => {
                                 ? 'bg-red-100 text-red-700 border-2 border-red-300 hover:bg-red-200 cursor-pointer'
                                 : pasado
                                 ? 'bg-gray-100 text-gray-400 border-2 border-gray-200 cursor-not-allowed'
+                                : enRangoSeleccionado
+                                ? 'bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700 border-2 border-blue-400 hover:from-blue-200 hover:to-blue-300'
                                 : 'bg-gradient-to-br from-green-100 to-emerald-100 text-green-700 border-2 border-green-300 hover:from-green-200 hover:to-emerald-200'
                             }
                           `}
                         >
                           <div className="font-bold text-base">{slot.inicio} - {slot.fin}</div>
-                          <div className="text-xs mt-1 font-medium">S/.{slot.precio30min}</div>
-                          {ocupado && (() => {
-                            const reserva = obtenerReservaOcupada(fecha, slot.inicio, slot.fin);
-                            return (
-                              <>
-                                <div className="text-xs mt-1 text-red-600 font-bold">✗ Ocupado</div>
-                                {reserva && reserva.usuario_nombre && (
-                                  <div className="text-xs mt-1 text-red-700 font-semibold truncate" title={reserva.usuario_nombre}>
-                                    {reserva.usuario_nombre}
-                                  </div>
-                                )}
-                              </>
-                            );
-                          })()}
+                          <div className="text-xs mt-1 font-medium">S/.{precioAMostrar}</div>
+                          {ocupado && reservaOcupada && (
+                            <>
+                              <div className="text-xs mt-1 text-red-600 font-bold">✗ Ocupado</div>
+                              {reservaOcupada.usuario_nombre && (
+                                <div className="text-xs mt-1 text-red-700 font-semibold truncate" title={reservaOcupada.usuario_nombre}>
+                                  {reservaOcupada.usuario_nombre}
+                                </div>
+                              )}
+                            </>
+                          )}
                           {!ocupado && !pasado && (
-                            <div className="text-xs mt-1 text-green-600">✓ Disponible</div>
+                            <div className={`text-xs mt-1 font-semibold ${enRangoSeleccionado ? 'text-blue-600' : 'text-green-600'}`}>
+                              {enRangoSeleccionado ? '✓ Seleccionado' : '✓ Disponible'}
+                            </div>
                           )}
                         </button>
                       );
                     })}
-                  </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </Card>
             );
           })}
         </div>
-      ) : (
-        <Card className="text-center py-12">
-          <div className="text-gray-500">Selecciona una cancha para ver los horarios</div>
-        </Card>
       )}
 
       {/* Modal de Reserva */}
@@ -754,7 +828,15 @@ const EmpleadoHorarios = () => {
                   label="Hora Inicio"
                   type="time"
                   value={formReserva.hora_inicio}
-                  onChange={(e) => setFormReserva({ ...formReserva, hora_inicio: e.target.value })}
+                  onChange={(e) => {
+                    const nuevaHoraInicio = e.target.value;
+                    const nuevaHoraFin = calcularHoraFin(nuevaHoraInicio, formReserva.duracion);
+                    setFormReserva({ 
+                      ...formReserva, 
+                      hora_inicio: nuevaHoraInicio,
+                      hora_fin: nuevaHoraFin
+                    });
+                  }}
                   required
                   icon="🕐"
                 />
@@ -762,7 +844,15 @@ const EmpleadoHorarios = () => {
                 <FormSelect
                   label="Duración"
                   value={formReserva.duracion}
-                  onChange={(e) => setFormReserva({ ...formReserva, duracion: e.target.value })}
+                  onChange={(e) => {
+                    const nuevaDuracion = e.target.value;
+                    const nuevaHoraFin = calcularHoraFin(formReserva.hora_inicio, nuevaDuracion);
+                    setFormReserva({ 
+                      ...formReserva, 
+                      duracion: nuevaDuracion,
+                      hora_fin: nuevaHoraFin
+                    });
+                  }}
                   options={[
                     { value: '30', label: '30 minutos' },
                     { value: '60', label: '1 hora' },
@@ -880,48 +970,14 @@ const EmpleadoHorarios = () => {
                   required
                   icon="🕐"
                 />
-                <div>
-                  <FormInput
-                    label="Hora Fin"
-                    type="time"
-                    value={formReserva.hora_fin}
-                    onChange={(e) => setFormReserva({ ...formReserva, hora_fin: e.target.value })}
-                    required
-                    icon="🕐"
-                  />
-                  <div className="mt-2 flex gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        const inicio = moment(formReserva.hora_inicio, 'HH:mm');
-                        const nuevaFin = inicio.clone().subtract(30, 'minutes');
-                        if (nuevaFin.isAfter(moment(formReserva.hora_inicio, 'HH:mm'))) {
-                          setFormReserva({ ...formReserva, hora_fin: nuevaFin.format('HH:mm') });
-                        }
-                      }}
-                      disabled={!formReserva.hora_inicio || !formReserva.hora_fin}
-                      className="text-xs"
-                    >
-                      -30 min
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        const inicio = moment(formReserva.hora_inicio, 'HH:mm');
-                        const nuevaFin = inicio.clone().add(30, 'minutes');
-                        setFormReserva({ ...formReserva, hora_fin: nuevaFin.format('HH:mm') });
-                      }}
-                      disabled={!formReserva.hora_inicio}
-                      className="text-xs"
-                    >
-                      +30 min
-                    </Button>
-                  </div>
-                </div>
+                <FormInput
+                  label="Hora Fin"
+                  type="time"
+                  value={formReserva.hora_fin}
+                  onChange={(e) => setFormReserva({ ...formReserva, hora_fin: e.target.value })}
+                  required
+                  icon="🕐"
+                />
               </div>
 
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg mb-4">

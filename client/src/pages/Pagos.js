@@ -235,7 +235,7 @@ const Pagos = () => {
                 {pago.comprobante && (
                   <div className="ml-4">
                     <a
-                      href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${pago.comprobante}`}
+                      href={`${window.location.origin}${pago.comprobante}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-4 py-2 bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 transition font-semibold text-sm shadow-md hover:shadow-lg"

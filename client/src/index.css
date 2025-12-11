@@ -15,6 +15,37 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: #f9fafb;
+  font-size: 14px;
+}
+
+/* Ajustes para móvil - tamaños de fuente más pequeños */
+@media (max-width: 640px) {
+  body {
+    font-size: 13px;
+  }
+  
+  html {
+    font-size: 14px;
+  }
+  
+  /* Reducir tamaños de texto base en móvil */
+  h1 {
+    font-size: 1.5rem !important;
+  }
+  
+  h2 {
+    font-size: 1.25rem !important;
+  }
+  
+  h3 {
+    font-size: 1.125rem !important;
+  }
+  
+  /* Mejorar espaciado en móvil */
+  .container {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
 }
 
 code {

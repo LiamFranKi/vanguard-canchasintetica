@@ -46,3 +46,18 @@ client/public/sw.js
 client/public/workbox-*.js
 
 
+
+# Archivos del sistema
+.bash_history
+.bashrc
+.cache/
+.lesshst
+.local/
+.npm/
+.pm2/
+.profile
+.ssh/
+snap/
+
+# Archivos temporales
+ystemctl start postgresql

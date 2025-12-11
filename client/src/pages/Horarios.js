@@ -82,10 +82,12 @@ const Horarios = () => {
     
     try {
       const response = await api.get(`/canchas/${canchaSeleccionada}`);
+      console.log('Datos de cancha cargados:', response.data);
       setCanchaData(response.data);
     } catch (error) {
       console.error('Error cargando datos de cancha:', error);
       swalConfig.toastError('Error', 'Error al cargar los datos de la cancha');
+      setCanchaData(null);
     }
   };
 
@@ -126,11 +128,23 @@ const Horarios = () => {
   };
 
   const generarSlots = (fecha) => {
-    if (!canchaData) return [];
+    if (!canchaData) {
+      console.warn('No hay datos de cancha para generar slots');
+      return [];
+    }
     
     const slots = [];
     const horaInicio = moment(canchaData.hora_inicio_atencion || '08:00', 'HH:mm');
     const horaFin = moment(canchaData.hora_fin_atencion || '23:00', 'HH:mm');
+    
+    // Validar que las horas sean válidas
+    if (!horaInicio.isValid() || !horaFin.isValid()) {
+      console.error('Horas de atención inválidas:', {
+        hora_inicio_atencion: canchaData.hora_inicio_atencion,
+        hora_fin_atencion: canchaData.hora_fin_atencion
+      });
+      return [];
+    }
     
     let current = horaInicio.clone();
     while (current.isBefore(horaFin)) {
@@ -158,6 +172,7 @@ const Horarios = () => {
       current.add(30, 'minutes');
     }
     
+    console.log(`Slots generados para ${fecha.format('YYYY-MM-DD')}:`, slots.length);
     return slots;
   };
 
@@ -186,6 +201,25 @@ const Horarios = () => {
   const calcularHoraFin = (horaInicio, duracion) => {
     const inicio = moment(horaInicio, 'HH:mm');
     return inicio.clone().add(parseInt(duracion), 'minutes').format('HH:mm');
+  };
+
+  // Verificar si un slot está dentro del rango seleccionado
+  const estaEnRangoSeleccionado = (slotInicio, slotFin) => {
+    if (!slotSeleccionado || !formReserva.hora_inicio || !formReserva.duracion) return false;
+    
+    const horaInicioSeleccionada = moment(formReserva.hora_inicio, 'HH:mm');
+    const horaFinSeleccionada = moment(calcularHoraFin(formReserva.hora_inicio, formReserva.duracion), 'HH:mm');
+    const slotInicioMoment = moment(slotInicio, 'HH:mm');
+    const slotFinMoment = moment(slotFin, 'HH:mm');
+    
+    // Verificar si el slot se solapa con el rango seleccionado
+    // Un slot está en el rango si su inicio está dentro del rango O su fin está dentro del rango
+    // O si el slot contiene completamente el rango
+    return (
+      (slotInicioMoment.isSameOrAfter(horaInicioSeleccionada) && slotInicioMoment.isBefore(horaFinSeleccionada)) ||
+      (slotFinMoment.isAfter(horaInicioSeleccionada) && slotFinMoment.isSameOrBefore(horaFinSeleccionada)) ||
+      (slotInicioMoment.isSameOrBefore(horaInicioSeleccionada) && slotFinMoment.isSameOrAfter(horaFinSeleccionada))
+    );
   };
 
   const calcularPrecio = (duracion, horaInicio = null) => {
@@ -303,14 +337,14 @@ const Horarios = () => {
       {/* Header - Solo mostrar cuando hay cancha seleccionada */}
       {canchaSeleccionada && (
         <div className="mb-8">
-          <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-green-100">
-            <h1 className="text-4xl font-extrabold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mb-2">
+          <div className="bg-white rounded-2xl shadow-xl p-3 sm:p-4 md:p-6 mb-4 sm:mb-6 border border-green-100">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mb-2 break-words">
               ⚽ Horarios y Disponibilidad
             </h1>
-            <p className="text-gray-600 text-lg">Selecciona un horario disponible para hacer tu reserva</p>
+            <p className="text-sm sm:text-base md:text-lg text-gray-600">Selecciona un horario disponible para hacer tu reserva</p>
             
             {/* Selector de Cancha para cambiar */}
-            <div className="mt-6 flex flex-col md:flex-row items-start md:items-end gap-4">
+            <div className="mt-4 sm:mt-6 flex flex-col md:flex-row items-start md:items-end gap-3 sm:gap-4">
               <div className="flex-1 w-full md:w-auto md:min-w-[300px]">
                 <FormSelect
                   label="Cambiar Cancha"
@@ -334,33 +368,33 @@ const Horarios = () => {
                 setCanchaData(null);
               }}
                 icon="↩️"
-                className="w-full md:w-auto"
+                className="w-full md:w-auto text-sm sm:text-base"
               >
                 Ver Todas las Canchas
               </Button>
             </div>
 
             {/* Navegación de semana */}
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mt-6 pt-6 border-t border-gray-200">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4 mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-200">
               <Button
                 variant="secondary"
                 onClick={() => cambiarSemana(-1)}
                 icon="←"
-                className="w-full md:w-auto"
+                className="w-full md:w-auto text-sm sm:text-base"
               >
                 Semana Anterior
               </Button>
-              <div className="text-center bg-gradient-to-r from-green-100 to-emerald-100 px-6 py-3 rounded-xl">
-                <h2 className="text-xl font-bold text-gray-800">
+              <div className="text-center bg-gradient-to-r from-green-100 to-emerald-100 px-3 sm:px-6 py-2 sm:py-3 rounded-xl">
+                <h2 className="text-base sm:text-lg md:text-xl font-bold text-gray-800">
                   {semanaActual.format('DD/MM/YYYY')} - {semanaActual.clone().add(6, 'days').format('DD/MM/YYYY')}
                 </h2>
-                <p className="text-sm text-gray-600 font-medium">Semana actual</p>
+                <p className="text-xs sm:text-sm text-gray-600 font-medium">Semana actual</p>
               </div>
               <Button
                 variant="secondary"
                 onClick={() => cambiarSemana(1)}
                 icon="→"
-                className="w-full md:w-auto"
+                className="w-full md:w-auto text-sm sm:text-base"
               >
                 Semana Siguiente
               </Button>
@@ -390,11 +424,11 @@ const Horarios = () => {
       {/* Mensaje si no hay cancha seleccionada - Mostrar canchas disponibles */}
       {!loadingCanchas && !canchaSeleccionada && canchas.length > 0 && (
         <div>
-          <div className="text-center mb-6">
-            <h3 className="text-2xl font-bold text-gray-800 mb-2">Canchas Disponibles</h3>
-            <p className="text-gray-600">Selecciona una cancha para ver sus horarios y hacer tu reserva</p>
+          <div className="text-center mb-4 sm:mb-6">
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2">Canchas Disponibles</h3>
+            <p className="text-sm sm:text-base text-gray-600">Selecciona una cancha para ver sus horarios y hacer tu reserva</p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
             {canchas.map(cancha => (
               <Card 
                 key={cancha.id} 
@@ -405,9 +439,9 @@ const Horarios = () => {
                   }}
               >
                 {cancha.imagen && (
-                  <div className="relative h-32 overflow-hidden">
+                  <div className="relative h-32 sm:h-40 overflow-hidden">
                     <img
-                      src={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${cancha.imagen}`}
+                      src={`${window.location.origin}${cancha.imagen}`}
                       alt={cancha.nombre}
                       className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
                     />
@@ -423,7 +457,7 @@ const Horarios = () => {
                   </div>
                 )}
                 {!cancha.imagen && (
-                  <div className="relative h-32 bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center">
+                  <div className="relative h-32 sm:h-40 bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center">
                     <div className="text-4xl">⚽</div>
                     <div className="absolute top-2 right-2">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-semibold shadow-lg ${
@@ -436,12 +470,12 @@ const Horarios = () => {
                     </div>
                   </div>
                 )}
-                <div className="p-4">
-                  <h3 className="text-lg font-bold text-gray-800 mb-1">{cancha.nombre}</h3>
+                <div className="p-3 sm:p-4">
+                  <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-1">{cancha.nombre}</h3>
                   {cancha.descripcion && (
-                    <p className="text-gray-600 text-xs mb-3 line-clamp-2">{cancha.descripcion}</p>
+                    <p className="text-gray-600 text-xs mb-2 sm:mb-3 line-clamp-2">{cancha.descripcion}</p>
                   )}
-                  <div className="space-y-1.5 mb-3">
+                  <div className="space-y-1 sm:space-y-1.5 mb-2 sm:mb-3">
                     <div className="flex items-center text-xs text-gray-500">
                       <span className="mr-1.5 text-sm">👥</span>
                       <span>Capacidad: <strong className="ml-1 text-gray-700">{cancha.capacidad} jugadores</strong></span>
@@ -482,10 +516,10 @@ const Horarios = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-gray-200">
+                  <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-gray-200">
                     <Button
                       variant="primary"
-                      className="w-full text-sm py-2"
+                      className="w-full text-xs sm:text-sm py-2"
                       icon="📅"
                     >
                       Ver Horarios
@@ -502,7 +536,11 @@ const Horarios = () => {
         <div className="text-center py-12">
           <div className="text-gray-500">Cargando horarios...</div>
         </div>
-      ) : canchaData && canchaSeleccionada ? (
+      ) : !canchaData ? (
+        <div className="text-center py-12">
+          <div className="text-gray-500">Cargando datos de la cancha...</div>
+        </div>
+      ) : canchaSeleccionada ? (
         <div className="space-y-6">
           {diasSemana.map((dia, index) => {
             const fecha = semanaActual.clone().add(index, 'days');
@@ -528,11 +566,21 @@ const Horarios = () => {
                   }`}
                 >
                   <div className="p-4">
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-                      {slots.map((slot, slotIndex) => {
+                    {slots.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p className="text-lg font-semibold">No hay horarios disponibles</p>
+                        <p className="text-sm mt-2">Verifica que la cancha tenga horarios de atención configurados</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3">
+                        {slots.map((slot, slotIndex) => {
                         const ocupado = estaOcupado(fecha, slot.inicio, slot.fin);
-                        const pasado = fecha.isBefore(moment(), 'day');
+                        const pasado = fecha.isBefore(moment().local(), 'day');
                         const reservaOcupada = obtenerReservaOcupada(fecha, slot.inicio, slot.fin);
+                        const enRangoSeleccionado = !ocupado && !pasado && slotSeleccionado && 
+                          slotSeleccionado.fecha && 
+                          moment(slotSeleccionado.fecha).format('YYYY-MM-DD') === fecha.format('YYYY-MM-DD') &&
+                          estaEnRangoSeleccionado(slot.inicio, slot.fin);
                         
                         return (
                           <button
@@ -540,7 +588,7 @@ const Horarios = () => {
                             onClick={() => handleSlotClick(fecha, slot)}
                             disabled={pasado}
                             className={`
-                              p-4 rounded-xl text-sm font-semibold transition-all duration-200
+                              p-2 sm:p-3 md:p-4 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200
                               transform hover:scale-105 active:scale-95
                               shadow-md hover:shadow-lg
                               ${
@@ -548,12 +596,18 @@ const Horarios = () => {
                                   ? 'bg-red-100 text-red-700 border-2 border-red-300 hover:bg-red-200 cursor-pointer'
                                   : pasado
                                   ? 'bg-gray-100 text-gray-400 border-2 border-gray-200 cursor-not-allowed'
+                                  : enRangoSeleccionado
+                                  ? 'bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700 border-2 border-blue-400 hover:from-blue-200 hover:to-blue-300'
                                   : 'bg-gradient-to-br from-green-100 to-emerald-100 text-green-700 border-2 border-green-300 hover:from-green-200 hover:to-emerald-200'
                               }
                             `}
                           >
-                            <div className="font-bold text-base">{slot.inicio} - {slot.fin}</div>
-                            <div className="text-xs mt-1 font-medium">S/.{slot.precio30min}</div>
+                            <div className="font-bold text-sm sm:text-base">{slot.inicio} - {slot.fin}</div>
+                            <div className="text-xs mt-1 font-medium">
+                              S/.{reservaOcupada && reservaOcupada.costo_total 
+                                ? parseFloat(reservaOcupada.costo_total).toFixed(2)
+                                : slot.precio30min.toFixed(2)}
+                            </div>
                             {ocupado && reservaOcupada && (
                               <>
                                 <div className="text-xs mt-1 text-red-600 font-bold">✗ Ocupado</div>
@@ -565,12 +619,15 @@ const Horarios = () => {
                               </>
                             )}
                             {!ocupado && !pasado && (
-                              <div className="text-xs mt-1 text-green-600 font-semibold">✓ Disponible</div>
+                              <div className={`text-xs mt-1 font-semibold ${enRangoSeleccionado ? 'text-blue-600' : 'text-green-600'}`}>
+                                {enRangoSeleccionado ? '✓ Seleccionado' : '✓ Disponible'}
+                              </div>
                             )}
                           </button>
                         );
                       })}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </Card>
@@ -581,8 +638,8 @@ const Horarios = () => {
 
       {/* Modal de Reserva */}
       {mostrarModalReserva && slotSeleccionado && canchaData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
             <FormCard
               title="Crear Reserva"
               subtitle={`Cancha: ${canchas.find(c => c.id === canchaSeleccionada)?.nombre || ''} - ${moment(slotSeleccionado.fecha).format('DD/MM/YYYY')} ${slotSeleccionado.slot.inicio} - ${slotSeleccionado.slot.fin}`}

@@ -40,27 +40,27 @@ const LandingPage = () => {
           <div className="text-center text-white">
             {logo && (
               <img 
-                src={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${logo}`} 
+                src={`${window.location.origin}${logo}`} 
                 alt={nombreEmpresa}
                 className="mx-auto mb-8 h-24 w-auto"
               />
             )}
-            <h1 className="text-5xl md:text-7xl font-bold mb-6 animate-fade-in">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-bold mb-4 sm:mb-6 animate-fade-in">
               {titulo}
             </h1>
-            <p className="text-xl md:text-2xl mb-8 opacity-90">
+            <p className="text-base sm:text-lg md:text-xl lg:text-2xl mb-6 sm:mb-8 opacity-90 px-2">
               {subtitulo}
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center px-4">
               <Link
                 to="/login"
-                className="bg-white text-green-600 px-8 py-4 rounded-lg font-semibold text-lg hover:bg-gray-100 transition transform hover:scale-105 shadow-lg"
+                className="bg-white text-green-600 px-6 sm:px-8 py-3 sm:py-4 rounded-lg font-semibold text-base sm:text-lg hover:bg-gray-100 transition transform hover:scale-105 shadow-lg text-center"
               >
                 Iniciar Sesión
               </Link>
               <Link
                 to="/app/horarios"
-                className="bg-transparent border-2 border-white text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-white hover:text-green-600 transition transform hover:scale-105"
+                className="bg-transparent border-2 border-white text-white px-6 sm:px-8 py-3 sm:py-4 rounded-lg font-semibold text-base sm:text-lg hover:bg-white hover:text-green-600 transition transform hover:scale-105 text-center"
               >
                 Ver Horarios
               </Link>
@@ -70,30 +70,30 @@ const LandingPage = () => {
       </section>
 
       {/* Features Section */}
-      <section className="features-section py-20 bg-white">
+      <section className="features-section py-12 sm:py-16 md:py-20 bg-white">
         <div className="container mx-auto px-4">
-          <h2 className="text-4xl font-bold text-center mb-12 text-gray-800">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-center mb-6 sm:mb-8 md:mb-12 text-gray-800">
             ¿Por qué elegirnos?
           </h2>
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="feature-card text-center p-6 rounded-lg bg-green-50 hover:shadow-lg transition">
-              <div className="text-5xl mb-4">⚽</div>
-              <h3 className="text-2xl font-semibold mb-3 text-green-700">Canchas de Primera</h3>
-              <p className="text-gray-600">
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
+            <div className="feature-card text-center p-4 sm:p-6 rounded-lg bg-green-50 hover:shadow-lg transition">
+              <div className="text-4xl sm:text-5xl mb-3 sm:mb-4">⚽</div>
+              <h3 className="text-lg sm:text-xl md:text-2xl font-semibold mb-2 sm:mb-3 text-green-700">Canchas de Primera</h3>
+              <p className="text-sm sm:text-base text-gray-600">
                 Canchas sintéticas de última generación con iluminación profesional
               </p>
             </div>
-            <div className="feature-card text-center p-6 rounded-lg bg-green-50 hover:shadow-lg transition">
-              <div className="text-5xl mb-4">📅</div>
-              <h3 className="text-2xl font-semibold mb-3 text-green-700">Reserva Online</h3>
-              <p className="text-gray-600">
+            <div className="feature-card text-center p-4 sm:p-6 rounded-lg bg-green-50 hover:shadow-lg transition">
+              <div className="text-4xl sm:text-5xl mb-3 sm:mb-4">📅</div>
+              <h3 className="text-lg sm:text-xl md:text-2xl font-semibold mb-2 sm:mb-3 text-green-700">Reserva Online</h3>
+              <p className="text-sm sm:text-base text-gray-600">
                 Reserva tu cancha desde cualquier dispositivo, las 24 horas del día
               </p>
             </div>
-            <div className="feature-card text-center p-6 rounded-lg bg-green-50 hover:shadow-lg transition">
-              <div className="text-5xl mb-4">💳</div>
-              <h3 className="text-2xl font-semibold mb-3 text-green-700">Pago Fácil</h3>
-              <p className="text-gray-600">
+            <div className="feature-card text-center p-4 sm:p-6 rounded-lg bg-green-50 hover:shadow-lg transition">
+              <div className="text-4xl sm:text-5xl mb-3 sm:mb-4">💳</div>
+              <h3 className="text-lg sm:text-xl md:text-2xl font-semibold mb-2 sm:mb-3 text-green-700">Pago Fácil</h3>
+              <p className="text-sm sm:text-base text-gray-600">
                 Múltiples formas de pago: online, depósito o efectivo
               </p>
             </div>
@@ -113,7 +113,7 @@ const LandingPage = () => {
                 <div key={cancha.id} className="cancha-card bg-white rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition">
                   {cancha.imagen && (
                     <img
-                      src={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${cancha.imagen}`}
+                      src={`${window.location.origin}${cancha.imagen}`}
                       alt={cancha.nombre}
                       className="w-full h-48 object-cover"
                     />

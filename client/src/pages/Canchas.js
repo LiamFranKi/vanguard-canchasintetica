@@ -54,7 +54,7 @@ const Canchas = () => {
               {cancha.imagen && (
                 <div className="relative h-48 overflow-hidden">
                   <img
-                    src={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${cancha.imagen}`}
+                    src={`${window.location.origin}${cancha.imagen}`}
                     alt={cancha.nombre}
                     className="w-full h-full object-cover"
                   />

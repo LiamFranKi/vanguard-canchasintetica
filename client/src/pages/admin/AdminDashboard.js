@@ -178,12 +178,12 @@ const AdminDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Panel de Administración</h1>
-          <p className="text-gray-600 mt-1">Bienvenido al sistema de gestión de canchas</p>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-0 mb-4 sm:mb-6">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 break-words">Panel de Administración</h1>
+          <p className="text-sm sm:text-base text-gray-600 mt-1">Bienvenido al sistema de gestión de canchas</p>
         </div>
-        <div className="text-sm text-gray-500">
+        <div className="text-xs sm:text-sm text-gray-500 whitespace-nowrap flex-shrink-0">
           {moment().format('dddd, D [de] MMMM [de] YYYY')}
         </div>
       </div>

@@ -290,24 +290,164 @@ const EmpleadoReservas = () => {
     setMostrarModalPago(true);
   };
 
-  const handleFileChangePago = (e) => {
+  const comprimirImagen = (file, maxWidth = 1920, maxHeight = 1920, quality = 0.8) => {
+    return new Promise((resolve, reject) => {
+      // Si es PDF, no comprimir
+      if (file.type === 'application/pdf') {
+        resolve(file);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          // Redimensionar si es necesario
+          if (width > maxWidth || height > maxHeight) {
+            if (width > height) {
+              height = (height * maxWidth) / width;
+              width = maxWidth;
+            } else {
+              width = (width * maxHeight) / height;
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error('Error al comprimir la imagen'));
+                return;
+              }
+              // Crear un nuevo File con el blob comprimido
+              const compressedFile = new File([blob], file.name, {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              });
+              resolve(compressedFile);
+            },
+            'image/jpeg',
+            quality
+          );
+        };
+        img.onerror = () => reject(new Error('Error al cargar la imagen'));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error('Error al leer el archivo'));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChangePago = async (e) => {
     if (e.target.files && e.target.files[0]) {
-      setFormPago({ ...formPago, comprobante: e.target.files[0] });
+      const file = e.target.files[0];
+      
+      // Validar que el archivo sea válido
+      if (file.size === 0) {
+        swalConfig.toastError('Error', 'El archivo está vacío. Por favor, intenta de nuevo.');
+        e.target.value = '';
+        return;
+      }
+
+      // Validar tipo de archivo
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        swalConfig.toastError('Error', 'Tipo de archivo no válido. Solo se permiten imágenes (JPG, PNG, WEBP) o PDF.');
+        e.target.value = '';
+        return;
+      }
+
+      try {
+        let fileToUse = file;
+
+        // Si es una imagen (no PDF), comprimirla
+        if (file.type !== 'application/pdf' && file.size > 1 * 1024 * 1024) {
+          // Comprimir si es mayor a 1MB
+          swalConfig.toastInfo('Comprimiendo...', 'Comprimiendo imagen para optimizar el tamaño');
+          fileToUse = await comprimirImagen(file, 1920, 1920, 0.75);
+          console.log(`Imagen comprimida: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(fileToUse.size / 1024 / 1024).toFixed(2)}MB`);
+        }
+
+        // Validar tamaño después de comprimir (5MB - debe coincidir con el servidor)
+        if (fileToUse.size > 5 * 1024 * 1024) {
+          swalConfig.toastError('Error', 'El archivo es demasiado grande incluso después de comprimir. Por favor, intenta con otra imagen.');
+          e.target.value = '';
+          return;
+        }
+
+        setFormPago({ ...formPago, comprobante: fileToUse });
+        swalConfig.toastSuccess('Archivo listo', `Archivo "${fileToUse.name}" listo para subir (${(fileToUse.size / 1024 / 1024).toFixed(2)}MB)`);
+      } catch (error) {
+        console.error('Error procesando archivo:', error);
+        swalConfig.toastError('Error', 'Error al procesar el archivo. Por favor, intenta de nuevo.');
+        e.target.value = '';
+      }
     }
   };
 
   const iniciarCamara = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' }
-      });
-      if (videoRef.current) {
+      // Intentar primero con cámara trasera (environment)
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+      } catch (envError) {
+        // Si falla, intentar con cualquier cámara disponible
+        console.log('Cámara trasera no disponible, usando cámara frontal:', envError);
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+      }
+      
+      if (videoRef.current && stream) {
         videoRef.current.srcObject = stream;
+        // Mostrar la cámara inmediatamente
         setMostrarCamara(true);
+        
+        // Asegurar que el video se reproduzca
+        videoRef.current.onloadedmetadata = async () => {
+          try {
+            await videoRef.current.play();
+          } catch (playError) {
+            console.log('Error al reproducir video:', playError);
+          }
+        };
+        
+        // Intentar reproducir inmediatamente también
+        videoRef.current.play().catch(err => {
+          console.log('Error al reproducir video inmediatamente:', err);
+        });
       }
     } catch (error) {
       console.error('Error accediendo a la cámara:', error);
-      swalConfig.toastError('Error', 'No se pudo acceder a la cámara. Por favor, permite el acceso a la cámara.');
+      let errorMessage = 'No se pudo acceder a la cámara.';
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        errorMessage = 'Permiso de cámara denegado. Por favor, permite el acceso a la cámara en la configuración del navegador.';
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        errorMessage = 'No se encontró ninguna cámara en el dispositivo.';
+      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        errorMessage = 'La cámara está siendo usada por otra aplicación.';
+      }
+      swalConfig.toastError('Error de Cámara', errorMessage);
     }
   };
 
@@ -352,14 +492,38 @@ const EmpleadoReservas = () => {
       return;
     }
 
+    // Validar el archivo antes de enviar
+    if (formPago.comprobante) {
+      if (formPago.comprobante.size === 0) {
+        swalConfig.toastError('Error', 'El archivo está vacío. Por favor, selecciona otro archivo.');
+        return;
+      }
+      if (formPago.comprobante.size > 5 * 1024 * 1024) {
+        swalConfig.toastError('Error', 'El archivo es demasiado grande. El tamaño máximo es 5MB.');
+        return;
+      }
+    }
+
     const formDataToSend = new FormData();
     formDataToSend.append('metodo_pago', formPago.metodo_pago);
     if (formPago.comprobante) {
+      console.log('Archivo a enviar:', {
+        name: formPago.comprobante.name,
+        size: formPago.comprobante.size,
+        type: formPago.comprobante.type,
+        lastModified: formPago.comprobante.lastModified
+      });
       formDataToSend.append('comprobante', formPago.comprobante);
     }
 
+    // Verificar que el FormData tenga el archivo
+    console.log('FormData entries:');
+    for (let pair of formDataToSend.entries()) {
+      console.log(pair[0] + ': ', pair[1]);
+    }
+
     try {
-      await api.post(`/reservas/${reservaParaPago.id}/pago`, formDataToSend, {
+      const response = await api.post(`/reservas/${reservaParaPago.id}/pago`, formDataToSend, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -376,7 +540,21 @@ const EmpleadoReservas = () => {
       detenerCamara();
       loadData();
     } catch (error) {
-      swalConfig.toastError('Error', error.response?.data?.message || 'Error al crear el pago');
+      console.error('Error completo al crear pago:', error);
+      console.error('Response data:', error.response?.data);
+      console.error('Response status:', error.response?.status);
+      
+      let errorMessage = 'Error al crear el pago';
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+        errorMessage = error.response.data.errors.map(e => e.msg || e.message).join(', ');
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      swalConfig.toastError('Error', errorMessage);
     }
   };
 
@@ -404,7 +582,7 @@ const EmpleadoReservas = () => {
 
   const verRecibo = (comprobante) => {
     if (comprobante) {
-      const url = `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${comprobante}`;
+      const url = `${window.location.origin}${comprobante}`;
       setReciboUrl(url);
       setMostrarRecibo(true);
     }
@@ -490,7 +668,16 @@ const EmpleadoReservas = () => {
     if (!reserva) return;
 
     try {
-      const nuevoCosto = calcularNuevoCosto(reserva);
+      // Si el precio manual está habilitado, usar ese precio; sino calcular
+      const nuevoCosto = formDataEdicion.precio_manual_enabled && formDataEdicion.precio_manual 
+        ? parseFloat(formDataEdicion.precio_manual) 
+        : calcularNuevoCosto(reserva);
+      
+      console.log('📝 Editando reserva desde EmpleadoReservas:', {
+        precio_manual_enabled: formDataEdicion.precio_manual_enabled,
+        precio_manual: formDataEdicion.precio_manual,
+        nuevoCosto
+      });
       
       await api.put(`/reservas/${editandoReserva}`, {
         hora_inicio: formDataEdicion.hora_inicio,
@@ -554,23 +741,24 @@ const EmpleadoReservas = () => {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-1">Gestión de Reservas</h1>
-          <p className="text-gray-600">Crea y administra reservas para los usuarios</p>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 mb-4 sm:mb-6">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 mb-1">Gestión de Reservas</h1>
+          <p className="text-sm sm:text-base text-gray-600">Crea y administra reservas para los usuarios</p>
         </div>
         <Button
           variant={mostrarFormulario ? 'secondary' : 'primary'}
           onClick={() => setMostrarFormulario(!mostrarFormulario)}
           icon={mostrarFormulario ? '✕' : '➕'}
+          className="w-full sm:w-auto text-sm sm:text-base"
         >
           {mostrarFormulario ? 'Cancelar' : 'Nueva Reserva'}
         </Button>
       </div>
 
       {/* Filtros */}
-      <div className="mb-6">
-        <div className="flex gap-4 flex-wrap mb-4">
+      <div className="mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-3 sm:mb-4">
           <FormSelect
             value={filtroCancha}
             onChange={(e) => setFiltroCancha(e.target.value)}
@@ -581,7 +769,7 @@ const EmpleadoReservas = () => {
                 label: cancha.nombre
               }))
             ]}
-            className="w-64 mb-0"
+            className="w-full sm:w-48 md:w-56 lg:w-64 mb-0"
           />
           <FormSelect
             value={filtroEstado || ''}
@@ -592,15 +780,16 @@ const EmpleadoReservas = () => {
               { value: 'pagada', label: 'Pagada' },
               { value: 'cancelada', label: 'Cancelada' }
             ]}
-            className="w-64 mb-0"
+            className="w-full sm:w-48 md:w-56 lg:w-64 mb-0"
           />
         </div>
         {/* Filtro de tipo de reservas */}
-        <div className="flex gap-4">
+        <div className="flex gap-2 sm:gap-4">
           <Button
             variant={filtroTipo === 'activas' ? 'primary' : 'secondary'}
             onClick={() => setFiltroTipo('activas')}
             icon="📋"
+            className="flex-1 sm:flex-none text-sm sm:text-base"
           >
             Reservas Activas
           </Button>
@@ -608,6 +797,7 @@ const EmpleadoReservas = () => {
             variant={filtroTipo === 'pasadas' ? 'primary' : 'secondary'}
             onClick={() => setFiltroTipo('pasadas')}
             icon="📜"
+            className="flex-1 sm:flex-none text-sm sm:text-base"
           >
             Reservas Pasadas
           </Button>
@@ -859,15 +1049,15 @@ const EmpleadoReservas = () => {
         <div className="text-center py-12">Cargando...</div>
       ) : (
         <Card>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto -mx-2 sm:mx-0">
             <table className="min-w-full">
               <thead>
                 <tr className="bg-gradient-to-r from-green-600 to-green-700 text-white">
-                  <th className="px-6 py-4 text-center font-semibold">Usuario</th>
-                  <th className="px-6 py-4 text-center font-semibold">Fecha y Horario</th>
-                  <th className="px-6 py-4 text-center font-semibold">Costo</th>
-                  <th className="px-6 py-4 text-center font-semibold">Pago</th>
-                  <th className="px-6 py-4 text-center font-semibold">Acciones</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Usuario</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Fecha y Horario</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Costo</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Pago</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -880,20 +1070,20 @@ const EmpleadoReservas = () => {
                 ) : (
                   reservasPaginadas.map((reserva) => (
                     <tr key={reserva.id} className="border-b hover:bg-gray-50 transition">
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center">
                         <div className="flex flex-col">
-                          <span className="font-semibold">{reserva.usuario_nombre}</span>
+                          <span className="font-semibold text-xs sm:text-sm">{reserva.usuario_nombre}</span>
                           <span className="text-xs text-gray-500 mt-1">{reserva.cancha_nombre}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center">
                         <div className="flex flex-col">
-                          <span className="font-semibold">{moment(reserva.fecha).format('DD/MM/YYYY')}</span>
+                          <span className="font-semibold text-xs sm:text-sm">{moment(reserva.fecha).format('DD/MM/YYYY')}</span>
                           <span className="text-xs text-gray-500 mt-1">{reserva.hora_inicio.substring(0, 5)} - {reserva.hora_fin.substring(0, 5)}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 font-semibold text-green-600 text-center">S/.{parseFloat(reserva.costo_total).toFixed(2)}</td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 font-semibold text-green-600 text-center text-xs sm:text-sm">S/.{parseFloat(reserva.costo_total).toFixed(2)}</td>
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center">
                         {reserva.estado === 'cancelada' ? (
                           <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">
                             Cancelado
@@ -933,8 +1123,8 @@ const EmpleadoReservas = () => {
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2 justify-center flex-wrap">
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4">
+                        <div className="flex gap-1 sm:gap-2 justify-center flex-wrap">
                           {/* Para empleados: NO mostrar botones si la reserva está pagada Y es pasada */}
                           {!(user?.rol === 'empleado' && reserva.pago_id && reserva.esPasada) && (
                             <>
@@ -947,8 +1137,10 @@ const EmpleadoReservas = () => {
                                   size="sm"
                                   onClick={() => handleEditar(reserva)}
                                   icon="✏️"
+                                  className="text-xs sm:text-sm px-2 sm:px-3"
                                 >
-                                  Editar
+                                  <span className="hidden sm:inline">Editar</span>
+                                  <span className="sm:hidden">✏️</span>
                                 </Button>
                               )}
                               {/* Pendiente sin pago: Pagar y Cancelar */}
@@ -959,16 +1151,20 @@ const EmpleadoReservas = () => {
                                     size="sm"
                                     onClick={() => handleCrearPago(reserva)}
                                     icon="💳"
+                                    className="text-xs sm:text-sm px-2 sm:px-3"
                                   >
-                                    Pagar
+                                    <span className="hidden sm:inline">Pagar</span>
+                                    <span className="sm:hidden">💳</span>
                                   </Button>
                                   <Button
                                     variant="danger"
                                     size="sm"
                                     onClick={() => handleCancelar(reserva.id)}
                                     icon="✕"
+                                    className="text-xs sm:text-sm px-2 sm:px-3"
                                   >
-                                    Cancelar
+                                    <span className="hidden sm:inline">Cancelar</span>
+                                    <span className="sm:hidden">✕</span>
                                   </Button>
                                 </>
                               )}
@@ -979,8 +1175,10 @@ const EmpleadoReservas = () => {
                                   size="sm"
                                   onClick={() => handleConfirmarPago(reserva.id)}
                                   icon="✓"
+                                  className="text-xs sm:text-sm px-2 sm:px-3"
                                 >
-                                  Confirmar Pago
+                                  <span className="hidden sm:inline">Confirmar</span>
+                                  <span className="sm:hidden">✓</span>
                                 </Button>
                               )}
                               {/* Completada/Pagada: Para empleados NO mostrar botones si es pasada, para admin solo Cancelar */}
@@ -990,8 +1188,10 @@ const EmpleadoReservas = () => {
                                   size="sm"
                                   onClick={() => handleCancelar(reserva.id)}
                                   icon="✕"
+                                  className="text-xs sm:text-sm px-2 sm:px-3"
                                 >
-                                  Cancelar
+                                  <span className="hidden sm:inline">Cancelar</span>
+                                  <span className="sm:hidden">✕</span>
                                 </Button>
                               )}
                               {/* Completada/Pagada pero NO pasada: Para empleados puede cancelar */}
@@ -1001,8 +1201,10 @@ const EmpleadoReservas = () => {
                                   size="sm"
                                   onClick={() => handleCancelar(reserva.id)}
                                   icon="✕"
+                                  className="text-xs sm:text-sm px-2 sm:px-3"
                                 >
-                                  Cancelar
+                                  <span className="hidden sm:inline">Cancelar</span>
+                                  <span className="sm:hidden">✕</span>
                                 </Button>
                               )}
                             </>
@@ -1094,27 +1296,19 @@ const EmpleadoReservas = () => {
                   
                   {!mostrarCamara ? (
                     <div className="space-y-3">
-                      <div className="flex gap-3">
-                        <label className="flex-1 cursor-pointer">
-                          <input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            onChange={handleFileChangePago}
-                            className="hidden"
-                            id="file-input"
-                          />
-                          <div className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl hover:border-green-500 focus-within:border-green-500 focus-within:ring-4 focus-within:ring-green-100 transition-all text-center">
-                            <span className="text-gray-600">📁 Seleccionar archivo</span>
-                      </div>
-                        </label>
-                        <button
-                          type="button"
-                          onClick={iniciarCamara}
-                          className="px-4 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 transition-all font-semibold"
-                        >
-                          📷 Cámara
-                        </button>
-                      </div>
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          capture="environment"
+                          onChange={handleFileChangePago}
+                          className="hidden"
+                          id="file-input"
+                        />
+                        <div className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl hover:border-green-500 focus-within:border-green-500 focus-within:ring-4 focus-within:ring-green-100 transition-all text-center">
+                          <span className="text-gray-600">📁 Seleccionar archivo</span>
+                        </div>
+                      </label>
                       {formPago.comprobante && (
                         <p className="text-sm text-green-600 flex items-center">
                           <span className="mr-1">✅</span>
@@ -1129,6 +1323,7 @@ const EmpleadoReservas = () => {
                           ref={videoRef}
                           autoPlay
                           playsInline
+                          muted
                           className="w-full h-auto max-h-64"
                         />
                         <canvas ref={canvasRef} className="hidden" />

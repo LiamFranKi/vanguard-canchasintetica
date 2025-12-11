@@ -3,11 +3,18 @@ const { query, transaction } = require('../database/connection');
 const { authenticate, authorize } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const moment = require('moment');
+// Configurar zona horaria para moment.js (usar local con zona horaria del sistema configurada)
+const TIMEZONE = process.env.TIMEZONE || 'America/Lima';
 const emailService = require('../services/email');
 const notificationService = require('../services/notifications');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+
+// Helper para obtener la fecha actual en la zona horaria correcta
+const getFechaActual = () => {
+  return moment().local().format('YYYY-MM-DD');
+};
 
 const router = express.Router();
 
@@ -233,8 +240,8 @@ router.get('/semanal/:canchaId', async (req, res) => {
     const { fecha_inicio } = req.query; // Fecha de inicio de la semana (lunes)
 
     const inicioSemana = fecha_inicio 
-      ? moment(fecha_inicio).startOf('week').add(1, 'day') // Lunes
-      : moment().startOf('week').add(1, 'day');
+      ? moment(fecha_inicio).local().startOf('week').add(1, 'day') // Lunes
+      : moment().local().startOf('week').add(1, 'day');
 
     const diasSemana = [];
     for (let i = 0; i < 7; i++) {
@@ -315,20 +322,49 @@ router.post('/', authenticate, [
     // Protege contra reservas simultáneas cuando múltiples usuarios/clientes/empleados
     // intentan reservar la misma hora al mismo tiempo
     const result = await transaction(async (client) => {
+      // Normalizar formato de horas (asegurar formato HH:mm:ss)
+      const horaInicioNormalizada = hora_inicio.includes(':') && hora_inicio.split(':').length === 2 
+        ? `${hora_inicio}:00` 
+        : hora_inicio;
+      const horaFinNormalizada = hora_fin.includes(':') && hora_fin.split(':').length === 2 
+        ? `${hora_fin}:00` 
+        : hora_fin;
+
+      console.log('🔍 Verificando disponibilidad:', {
+        cancha_id,
+        fecha,
+        hora_inicio_original: hora_inicio,
+        hora_fin_original: hora_fin,
+        hora_inicio_normalizada: horaInicioNormalizada,
+        hora_fin_normalizada: horaFinNormalizada
+      });
+
       // Bloquear filas existentes con SELECT FOR UPDATE para prevenir reservas simultáneas
       // Esto asegura que solo la primera solicitud pueda crear la reserva
+      // La lógica verifica si hay solapamiento de horarios:
+      // - Si la nueva reserva empieza dentro de una existente
+      // - Si la nueva reserva termina dentro de una existente  
+      // - Si la nueva reserva contiene completamente una existente
       const disponibilidad = await client.query(
-        `SELECT id FROM reservas 
+        `SELECT id, hora_inicio, hora_fin, estado FROM reservas 
          WHERE cancha_id = $1 AND fecha = $2 
          AND estado IN ('pendiente', 'confirmada', 'completada')
          AND (
-           (hora_inicio <= $3 AND hora_fin > $3) OR
-           (hora_inicio < $4 AND hora_fin >= $4) OR
-           (hora_inicio >= $3 AND hora_fin <= $4)
+           (hora_inicio::time < $4::time AND hora_fin::time > $3::time)
          )
          FOR UPDATE`,
-        [cancha_id, fecha, hora_inicio, hora_fin]
+        [cancha_id, fecha, horaInicioNormalizada, horaFinNormalizada]
       );
+
+      console.log('🔍 Resultados de disponibilidad:', {
+        encontradas: disponibilidad.rows.length,
+        reservas: disponibilidad.rows.map(r => ({
+          id: r.id,
+          hora_inicio: r.hora_inicio,
+          hora_fin: r.hora_fin,
+          estado: r.estado
+        }))
+      });
 
       if (disponibilidad.rows.length > 0) {
         throw new Error('El horario seleccionado no está disponible');
@@ -442,15 +478,29 @@ router.post('/', authenticate, [
 
         // Enviar correo al usuario si tiene email
         if (usuarioData.rows[0].email) {
-          emailService.sendReservationEmail(usuarioData.rows[0].email, usuarioData.rows[0].nombre, {
-            cancha_nombre: canchaNombre,
-            fecha,
-            hora_inicio,
-            hora_fin,
-            costo_total: costoTotal
-          }).catch(emailError => {
-            console.error('Error enviando correo:', emailError);
-          });
+          console.log('📧 Enviando correo de reserva confirmada al usuario:', usuarioData.rows[0].email);
+          try {
+            const emailEnviado = await emailService.sendReservationEmail(
+              usuarioData.rows[0].email, 
+              usuarioData.rows[0].nombre, 
+              {
+                cancha_nombre: canchaNombre,
+                fecha,
+                hora_inicio,
+                hora_fin,
+                costo_total: parseFloat(reserva.costo_total)
+              }
+            );
+            if (emailEnviado) {
+              console.log('✅ Correo de reserva confirmada enviado exitosamente al usuario');
+            } else {
+              console.warn('⚠️ No se pudo enviar el correo de reserva confirmada (transporter no configurado)');
+            }
+          } catch (emailError) {
+            console.error('❌ Error enviando correo de reserva confirmada:', emailError);
+          }
+        } else {
+          console.warn('⚠️ Usuario no tiene email configurado, no se enviará correo de reserva');
         }
 
         // Notificar al personal asignado a la cancha
@@ -467,7 +517,7 @@ router.post('/', authenticate, [
           fecha,
           hora_inicio,
           hora_fin,
-          costo_total: costoTotal
+          costo_total: parseFloat(reserva.costo_total)
         };
 
         for (const emp of personal.rows) {
@@ -480,13 +530,25 @@ router.post('/', authenticate, [
           });
 
           if (emp.email) {
-            const usuarioNombreCompleto = `${usuarioData.rows[0].nombre} ${usuarioData.rows[0].apellido}`;
-            emailService.sendNewReservationNotificationToStaff(
-              emp.email,
-              emp.nombre,
-              reservaInfo,
-              usuarioNombreCompleto
-            ).catch(emailError => console.error('Error enviando correo de nueva reserva al personal:', emailError));
+            console.log('📧 Enviando correo de nueva reserva al empleado:', emp.email);
+            try {
+              const usuarioNombreCompleto = `${usuarioData.rows[0].nombre} ${usuarioData.rows[0].apellido}`;
+              const emailEnviado = await emailService.sendNewReservationNotificationToStaff(
+                emp.email,
+                `${emp.nombre} ${emp.apellido}`,
+                reservaInfo,
+                usuarioNombreCompleto
+              );
+              if (emailEnviado) {
+                console.log('✅ Correo de nueva reserva enviado exitosamente al empleado');
+              } else {
+                console.warn('⚠️ No se pudo enviar el correo de nueva reserva (transporter no configurado)');
+              }
+            } catch (emailError) {
+              console.error('❌ Error enviando correo de nueva reserva al personal:', emailError);
+            }
+          } else {
+            console.warn(`⚠️ Empleado ${emp.nombre} ${emp.apellido} no tiene email configurado`);
           }
         }
       } catch (error) {
@@ -562,12 +624,20 @@ router.put('/:id', authenticate, [
     // Si se proporciona costo_total manualmente, usarlo; sino recalcular si cambió el tiempo
     let nuevoCostoTotal = reserva.costo_total;
     
+    console.log('📝 Backend recibiendo edición de reserva:', {
+      costo_total_recibido: costo_total,
+      costo_total_type: typeof costo_total,
+      hora_inicio,
+      hora_fin
+    });
+    
     if (costo_total !== undefined && costo_total !== null && costo_total !== '') {
       // Usar el costo manual proporcionado
       nuevoCostoTotal = parseFloat(costo_total);
       if (isNaN(nuevoCostoTotal) || nuevoCostoTotal < 0) {
         return res.status(400).json({ message: 'El costo total debe ser un número válido mayor o igual a 0' });
       }
+      console.log('✅ Usando costo manual:', nuevoCostoTotal);
     } else if (hora_inicio || hora_fin) {
       // Recalcular automáticamente si cambió el tiempo
       const inicio = moment(nuevaHoraInicio, 'HH:mm:ss');
@@ -1059,7 +1129,7 @@ router.post('/cancelar-vencidas', authenticate, authorize('admin', 'empleado'), 
     const diasMax = parseInt(config.rows[0]?.valor || 3);
 
     // Buscar reservas pendientes que no tienen pago confirmado y han pasado los días máximos
-    const fechaLimite = moment().subtract(diasMax, 'days').format('YYYY-MM-DD');
+    const fechaLimite = moment().local().subtract(diasMax, 'days').format('YYYY-MM-DD');
     
     const reservasVencidas = await query(
       `SELECT r.id, r.usuario_id, r.cancha_id, r.fecha, r.hora_inicio

@@ -52,18 +52,21 @@ const EmpleadoUsuarios = () => {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-1">Crear Usuarios</h1>
-          <p className="text-gray-600">Registra nuevos usuarios en el sistema</p>
+      <div className="mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 mb-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 mb-1">Gestión de Usuarios</h1>
+            <p className="text-sm sm:text-base text-gray-600">Administra los usuarios del sistema</p>
+          </div>
+          <Button
+            variant={mostrarFormulario ? 'secondary' : 'primary'}
+            onClick={() => setMostrarFormulario(!mostrarFormulario)}
+            icon={mostrarFormulario ? '✕' : '➕'}
+            className="w-full sm:w-auto text-sm sm:text-base"
+          >
+            {mostrarFormulario ? 'Cancelar' : 'Nuevo Usuario'}
+          </Button>
         </div>
-        <Button
-          variant={mostrarFormulario ? 'secondary' : 'primary'}
-          onClick={() => setMostrarFormulario(!mostrarFormulario)}
-          icon={mostrarFormulario ? '✕' : '➕'}
-        >
-          {mostrarFormulario ? 'Cancelar' : 'Nuevo Usuario'}
-        </Button>
       </div>
 
       {mostrarFormulario && (
@@ -134,58 +137,52 @@ const EmpleadoUsuarios = () => {
         </FormCard>
       )}
 
-      {!mostrarFormulario && (
+      {loading ? (
+        <div className="text-center py-12">
+          <div className="text-gray-500">Cargando usuarios...</div>
+        </div>
+      ) : (
         <Card>
-          <div className="mb-4">
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Usuarios Registrados</h2>
-            <p className="text-sm text-gray-600">Total: {usuarios.length} usuario{usuarios.length !== 1 ? 's' : ''}</p>
-          </div>
-          
-          {loading ? (
-            <div className="text-center py-12">
-              <p className="text-gray-600">Cargando usuarios...</p>
-            </div>
-          ) : usuarios.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">👥</div>
-              <p className="text-gray-600">No hay usuarios registrados aún</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+          <div className="overflow-x-auto -mx-2 sm:mx-0">
+            <table className="min-w-full">
+              <thead>
+                <tr className="bg-gradient-to-r from-green-600 to-green-700 text-white">
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">DNI</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Nombre</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base hidden sm:table-cell">Email</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base hidden md:table-cell">Teléfono</th>
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-semibold text-xs sm:text-sm md:text-base">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usuarios.length === 0 ? (
                   <tr>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">DNI</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Apellido</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                      {loading ? 'Cargando...' : 'No se encontraron usuarios'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {usuarios.map((usuario) => (
-                    <tr key={usuario.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">{usuario.dni}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">{usuario.nombre}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">{usuario.apellido}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">{usuario.email || '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">{usuario.telefono || '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                ) : (
+                  usuarios.map((usuario) => (
+                    <tr key={usuario.id} className="border-b hover:bg-gray-50 transition">
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center font-medium text-xs sm:text-sm">{usuario.dni}</td>
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center text-xs sm:text-sm">{usuario.nombre} {usuario.apellido}</td>
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center text-gray-600 text-xs sm:text-sm hidden sm:table-cell">{usuario.email || '-'}</td>
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center text-gray-600 text-xs sm:text-sm hidden md:table-cell">{usuario.telefono || '-'}</td>
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-center">
+                        <span className={`inline-block px-2 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 rounded-full text-xs font-semibold shadow-md ${
                           usuario.activo 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
+                            ? 'bg-green-100 text-green-800 border border-green-200' 
+                            : 'bg-red-100 text-red-800 border border-red-200'
                         }`}>
                           {usuario.activo ? 'Activo' : 'Inactivo'}
                         </span>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
     </div>
